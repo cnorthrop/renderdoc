@@ -751,6 +751,102 @@ extern "C" RENDERDOC_API void RENDERDOC_CC RENDERDOC_StartAndroidRemoteServer(co
   if(device || device[0] == '\0')
     Android::extractDeviceIDAndIndex(device, index, deviceID);
 
+  // We should hook up versioning of the server, then re-install if the version is old or mismatched
+  // But for now, just install it, if not already present
+  string adbPackage = adbExecCommand(device, "shell pm list packages org.renderdoc.renderdoccmd");
+
+  if(adbPackage.empty())
+  {
+    bool apkFound = false;
+    string targetApk = "RenderDocCmd.apk";
+    string serverApk;
+
+    // Walk through local directory tree and find the server APK
+    std::vector<string> workList;
+    workList.push_back(".");
+    RDCLOG("Beginning directory search for %s", targetApk.c_str());
+    while (!apkFound && !workList.empty())
+    {
+      string currentDir = workList.back();
+      workList.pop_back();
+
+      RDCLOG("Searching the following directory: %s", currentDir.c_str());
+      std::vector<PathEntry> files = FileIO::GetFilesInDirectory(currentDir.c_str());
+      for (auto& entry : files)
+      {
+        // would be better to enhance rdctype::str, but converting to string is a
+        // shortcut to comparison and + operator below
+        string filename(entry.filename.c_str());
+        if(filename.compare(targetApk) == 0)
+        {
+          apkFound = true;
+          serverApk = currentDir + "/" + filename;
+          RDCLOG("server APK found!: %s", serverApk.c_str());
+          break;
+        }
+
+        if(entry.flags & PathProperty::Directory)
+        {
+          workList.push_back(currentDir + "/" + filename);
+        }
+      }
+    }
+
+    if(!apkFound)
+    {
+        RDCERR("%s missing! RenderDoc for Android will not work without it.", targetApk.c_str());
+    }
+
+    // Build a map so we can switch on the string that returns from adb calls
+    enum AndroidAbis
+    {
+      Android_armeabi,
+      Android_armeabi_v7a,
+      Android_arm64_v8a,
+      Android_x86,
+      Android_x86_64,
+      Android_mips,
+      Android_mips64,
+      Android_numAbis
+    };
+
+    static std::map<std::string, AndroidAbis> abi_string_map;
+    abi_string_map["armeabi"]     = Android_armeabi;
+    abi_string_map["armeabi-v7a"] = Android_armeabi_v7a;
+    abi_string_map["arm64-v8a"]   = Android_arm64_v8a;
+    abi_string_map["x86"]         = Android_x86;
+    abi_string_map["x86_64"]      = Android_x86_64;
+    abi_string_map["mips"]        = Android_mips;
+    abi_string_map["mips64"]      = Android_mips64;
+
+    // The 32-bit server works for 32 and 64 bit apps, so simply install
+    // 32-bit that matches ABI of the target device
+    string adbAbi = adbExecCommand(device, "shell getprop ro.product.cpu.abi");
+    string adbInstall;
+    switch(abi_string_map[adbAbi.c_str()])
+    {
+      case Android_armeabi:
+      case Android_armeabi_v7a:
+      case Android_arm64_v8a:
+        adbInstall = adbExecCommand(device, "install -r --abi armeabi-v7a " + serverApk); break;
+      case Android_x86:
+      case Android_x86_64:
+        adbInstall = adbExecCommand(device, "install -r --abi x86 " + serverApk); break;
+      case Android_mips:
+      case Android_mips64:
+        adbInstall = adbExecCommand(device, "install -r --abi mips" + serverApk); break;
+      default:
+        RDCERR("Unsupported target ABI: %s", adbAbi.c_str()); break;
+    }
+
+    // Ensure installation succeeded
+    string adbCheck = adbExecCommand(device, "shell pm list packages org.renderdoc.renderdoccmd");
+    if(adbCheck.empty())
+    {
+      RDCERR("Installation of RenderDocCmd.apk failed!");
+    }
+  }
+
   adbExecCommand(deviceID, "shell am force-stop org.renderdoc.renderdoccmd");
   adbForwardPorts(index, deviceID);
   adbExecCommand(deviceID, "shell setprop debug.vulkan.layers :");
