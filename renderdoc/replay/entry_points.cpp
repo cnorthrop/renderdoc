@@ -603,7 +603,7 @@ string adbExecCommand(const string &device, const string &args)
     deviceArgs = args;
   else
     deviceArgs = StringFormat::Fmt("-s %s %s", device.c_str(), args.c_str());
-  Process::LaunchProcess(adbExePath.c_str(), "", deviceArgs.c_str(), &result);
+  Process::LaunchProcess(adbExePath.c_str(), ".", deviceArgs.c_str(), &result);
   RDCLOG("COMMAND: adb %s", args.c_str());
   if(result.strStdout.length())
     // This could be an error (i.e. no package), or just regular output from adb devices.
