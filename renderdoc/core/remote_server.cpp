@@ -829,7 +829,7 @@ public:
 
     if(Android::IsHostADB(m_hostname.c_str()))
     {
-      string adbStdout = Android::adbExecCommand("shell pm list packages -3");
+      string adbStdout = Android::adbExecCommand("shell pm list packages -3").strStdout;
       using namespace std;
       istringstream stdoutStream(adbStdout);
       string line;

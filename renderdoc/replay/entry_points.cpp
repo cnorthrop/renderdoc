@@ -547,7 +547,7 @@ bool IsHostADB(const char *hostname)
 {
   return !strncmp(hostname, "adb:", 4);
 }
-string adbExecCommand(const string &args)
+Process::ProcessResult adbExecCommand(const string &args)
 {
   string adbExePath = RenderDoc::Inst().GetConfigSetting("adbExePath");
   if(adbExePath.empty())
@@ -566,7 +566,7 @@ string adbExecCommand(const string &args)
   if(result.strStdout.length())
     // This could be an error (i.e. no package), or just regular output from adb devices.
     RDCLOG("STDOUT:\n%s", result.strStdout.c_str());
-  return result.strStdout;
+  return result;
 }
 void adbForwardPorts()
 {
@@ -618,7 +618,7 @@ uint32_t StartAndroidPackageForCapture(const char *host, const char *package)
 using namespace Android;
 extern "C" RENDERDOC_API void RENDERDOC_CC RENDERDOC_EnumerateAndroidDevices(rdctype::str *deviceList)
 {
-  string adbStdout = adbExecCommand("devices");
+  string adbStdout = adbExecCommand("devices").strStdout;
 
   using namespace std;
   istringstream stdoutStream(adbStdout);
@@ -657,7 +657,7 @@ extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_CheckAndroidVulkanLayer(rdc
   string packageName(exe.c_str());
 
   // Check the application for RenderDoc layer
-  string pkgPath = adbExecCommand("shell pm path " + packageName);
+  string pkgPath = adbExecCommand("shell pm path " + packageName).strStdout;
 
   RDCLOG("packageName: %s", packageName.c_str());
   RDCLOG("pkgPath: %s", pkgPath.c_str());
@@ -670,7 +670,7 @@ extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_CheckAndroidVulkanLayer(rdc
   RDCLOG("pkgPath shortened: %s", pkgPath.c_str());
 
   // search the lib directory for our layer, ignoring ABI for now
-  string findLayer = adbExecCommand("shell find " + pkgPath + "lib -name libVkLayer_RenderDoc.so");
+  string findLayer = adbExecCommand("shell find " + pkgPath + "lib -name libVkLayer_RenderDoc.so").strStdout;
   RDCLOG("findLayer: %s", findLayer.c_str());
 
   // TODO: Also check /data/local/debug/vulkan, which rooted phones can place layers into

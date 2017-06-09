@@ -411,5 +411,5 @@ namespace Android
 {
 bool IsHostADB(const char *hostname);
 uint32_t StartAndroidPackageForCapture(const char *host, const char *package);
-string adbExecCommand(const string &args);
+Process::ProcessResult adbExecCommand(const string &args);
 }
