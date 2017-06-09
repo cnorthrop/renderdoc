@@ -652,6 +652,47 @@ extern "C" RENDERDOC_API void RENDERDOC_CC RENDERDOC_StartAndroidRemoteServer()
       "shell am start -n org.renderdoc.renderdoccmd/.Loader -e renderdoccmd remoteserver");
 }
 
+extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_CheckAndroidVulkanLayer(rdctype::str& exe)
+{
+  string packageName(exe.c_str());
+
+  // Check the application for RenderDoc layer
+  string pkgPath = adbExecCommand("shell pm path " + packageName);
+
+  RDCLOG("packageName: %s", packageName.c_str());
+  RDCLOG("pkgPath: %s", pkgPath.c_str());
+
+  // remove the preamble
+  pkgPath.erase(pkgPath.begin(), pkgPath.begin() + sizeof("package:") - 1);
+
+  // remove the base.apk
+  pkgPath.erase(pkgPath.end() - sizeof("base.apk"), pkgPath.end());
+  RDCLOG("pkgPath shortened: %s", pkgPath.c_str());
+
+  // search the lib directory for our layer, ignoring ABI for now
+  string findLayer = adbExecCommand("shell find " + pkgPath + "lib -name libVkLayer_RenderDoc.so");
+  RDCLOG("findLayer: %s", findLayer.c_str());
+
+  // TODO: Also check /data/local/debug/vulkan, which rooted phones can place layers into
+
+  // TODO: Leave the option open of checking other locations in the future
+
+  // if we got a hit, we'll get output, otherwise nothing
+  if(findLayer.empty())
+  {
+    RDCERR("Your app is missing the RenderDoc layer - we should pop something up here!");
+    return false;
+  }
+
+  return true;
+}
+
+extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_AddLayerToAndroidPackage(rdctype::str& exe)
+{
+  //string packageName(exe.c_str());
+  return false;
+}
+
 extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_NeedVulkanLayerRegistration(
     VulkanLayerFlags *flagsPtr, rdctype::array<rdctype::str> *myJSONsPtr,
     rdctype::array<rdctype::str> *otherJSONsPtr)

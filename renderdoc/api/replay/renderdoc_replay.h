@@ -1431,3 +1431,9 @@ extern "C" RENDERDOC_API void RENDERDOC_CC RENDERDOC_EnumerateAndroidDevices(rdc
 
 DOCUMENT("Internal function for starting an android remote server.");
 extern "C" RENDERDOC_API void RENDERDOC_CC RENDERDOC_StartAndroidRemoteServer();
+
+DOCUMENT("Internal function for checkoug for presence of RenderDoc Vulkan layer on remote device.");
+extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_CheckAndroidVulkanLayer(rdctype::str& exe);
+
+DOCUMENT("Internal function that attempts to modify APK contents, adding Vulkan layer.");
+extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_AddLayerToAndroidPackage(rdctype::str& exe);
