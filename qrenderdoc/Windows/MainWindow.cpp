@@ -345,14 +345,14 @@ void MainWindow::OnCaptureTrigger(const QString &exe, const QString &workingDir,
       else if (patch == QMessageBox::Cancel)
       {
         // Bail unceremoniously
-        RDCLOG("No layer detected, cancelling launch");
+        // ?? RDCLOG("No layer detected, cancelling launch");
         return;
       }
       else
       {
         // QMessageBox::No == continue - that's not intuitive, need to hook up custom buttons
-        RDCASSERT(patch == QMessageBox::No);
-        RDCLOG("No layer detected, but continuing with launch");
+        // ?? RDCASSERT(patch == QMessageBox::No);
+        // ?? RDCLOG("No layer detected, but continuing with launch");
       }
     }
   }

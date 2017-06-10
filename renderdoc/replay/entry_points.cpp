@@ -689,8 +689,56 @@ extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_CheckAndroidVulkanLayer(rdc
 
 extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_AddLayerToAndroidPackage(rdctype::str& exe)
 {
-  //string packageName(exe.c_str());
-  return false;
+  Process::ProcessResult result = {};
+
+  string packageName(exe.c_str());
+
+  // Find the APK
+  string pkgPath = adbExecCommand("shell pm path " + packageName).strStdout;
+
+  // Remove the preamble
+  pkgPath.erase(pkgPath.begin(), pkgPath.begin() + sizeof("package:") - 1);
+
+  // Remove the newline
+  pkgPath.erase(pkgPath.end() - 1, pkgPath.end());
+
+
+  // Pull the APK
+  string origAPK(packageName + ".orig.apk");
+  if(result.retCode == 0) adbExecCommand("pull " + pkgPath + " " + origAPK);
+
+  // Remove any existing signature
+  if(result.retCode == 0)
+  {  
+     // Get the list of files in META-INF
+     Process::LaunchProcess("pwd", ".", "", &result);
+     RDCLOG("stdout pwd: %s", result.strStdout.c_str());
+     RDCLOG("stderr pwd: %s", result.strStderror.c_str());
+     string aaptArgs("list " + origAPK);
+     RDCLOG("aapt args: %s", aaptArgs.c_str());
+     Process::LaunchProcess("aapt", ".", aaptArgs.c_str(), &result);
+     //Process::LaunchProcess("aapt", ".", string("list" + origAPK).c_str(), &result);
+     RDCLOG("stdout of aapt list: %s", result.strStdout.c_str());
+     RDCLOG("stderr of aapt list: %s", result.strStderror.c_str());
+     return false;
+     
+     RDCLOG("Removing any existing signatures from the APK");
+     Process::LaunchProcess("aapt", string("remove" + origAPK + "META-INF/MANIFEST.MF").c_str(), ".", &result);
+     Process::LaunchProcess("aapt", string("remove" + origAPK + "META-INF/").c_str(), ".", &result);
+     Process::LaunchProcess("aapt", string("remove" + origAPK + "META-INF/").c_str(), ".", &result);
+     Process::LaunchProcess("aapt", string("remove" + origAPK + "META-INF/").c_str(), ".", &result);
+     Process::LaunchProcess("aapt", string("remove" + origAPK + "META-INF/").c_str(), ".", &result);
+  }
+
+  // Attempt to insert layer
+  if(result.retCode== 0) adbExecCommand("");
+
+  // Re-align the APK for performance
+  if(result.retCode == 0) adbExecCommand("");
+
+  // Re-install it
+
+  return true;
 }
 
 extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_NeedVulkanLayerRegistration(
