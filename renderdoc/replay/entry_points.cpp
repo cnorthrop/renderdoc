@@ -549,7 +549,23 @@ bool IsHostADB(const char *hostname)
 {
   return !strncmp(hostname, "adb:", 4);
 }
-Process::ProcessResult adbExecCommand(const string &args)
+Process::ProcessResult execCommand(const string& cmd, const string& workDir = ".")
+{
+  RDCLOG("COMMAND: %s", cmd.c_str());
+
+  size_t firstSpace = cmd.find(" ");
+  string exe = cmd.substr(0, firstSpace);
+  string args = cmd.substr(firstSpace + 1, cmd.length());
+
+  Process::ProcessResult result;
+  Process::LaunchProcess(exe.c_str(), workDir.c_str(), args.c_str(), &result);
+  if(result.strStdout.length())
+    RDCLOG("STDOUT:\n%s", result.strStdout.c_str());
+  if(result.strStderror.length())
+    RDCLOG("STDERR:\n%s", result.strStderror.c_str());
+  return result;
+}
+Process::ProcessResult adbExecCommand(const string& args)
 {
   string adbExePath = RenderDoc::Inst().GetConfigSetting("adbExePath");
   if(adbExePath.empty())
@@ -562,15 +578,7 @@ Process::ProcessResult adbExecCommand(const string &args)
     }
     adbExePath.append("adb");
   }
-  Process::ProcessResult result;
-  Process::LaunchProcess(adbExePath.c_str(), "", args.c_str(), &result);
-  RDCLOG("COMMAND: adb %s", args.c_str());
-  if(result.strStdout.length())
-    // This could be an error (i.e. no package), or just regular output from adb devices.
-    RDCLOG("STDOUT:\n%s", result.strStdout.c_str());
-  if(result.strStderror.length())
-    RDCLOG("STDERR:\n%s", result.strStderror.c_str());
-  return result;
+  return execCommand(string(adbExePath + " " + args).c_str());
 }
 void adbForwardPorts()
 {
@@ -617,7 +625,86 @@ uint32_t StartAndroidPackageForCapture(const char *host, const char *package)
 
   return ret;
 }
+
+bool SearchForAndroidLayer(const string& location)
+{
+  RDCLOG("Checking for layers in: %s", location.c_str());
+  string findLayer = adbExecCommand("shell find " + location + " -name libVkLayer_RenderDoc.so").strStdout;
+  if(!findLayer.empty())
+  {
+    RDCLOG("Found RenderDoc layer in %s", location.c_str());
+    return true;
+  }
+  return false;
 }
+
+bool RemoveAPKSignature(const string& apk)
+{
+  RDCLOG("Checking for existing signature");
+
+  // Get the list of files in META-INF
+  string aaptArgs("list " + apk);
+  string fileList = execCommand("aapt list " + apk).strStdout;
+
+  if(fileList.empty())
+    return false;
+
+  // Walk through the output.  If it starts with META-INF, remove it.
+  std::stringstream contents(fileList);
+  string line;
+  string prefix("META-INF");
+  while(std::getline(contents, line, '\n'))
+  {
+    if(line.compare(0, prefix.size(), prefix) == 0)
+    {
+      RDCLOG("match foundline, removing  %s", line.c_str());
+      execCommand("aapt remove " + apk + " " + line);
+    }
+  }
+
+  return true;
+}
+
+bool AddLayerToAPK(const string& apk, const string& layerPath, const string& tmpDir)
+{
+  RDCLOG("Adding RenderDoc layer");
+  string stdOut = execCommand("aapt add " + apk + " " + layerPath, tmpDir).strStdout;
+
+  if(stdOut.empty())
+    return false;
+
+  return true;
+}
+
+bool RealignAPK(const string& apk, string& alignedAPK, const string& tmpDir)
+{
+  // Re-align the APK for performance
+  RDCLOG("Realigning APK");
+  string errOut = execCommand("zipalign -f 4 " + apk + " " + alignedAPK, tmpDir).strStderror;
+
+  if(!errOut.empty())
+    return false;
+
+  // Wait until the aligned version exists to proceed
+  uint32_t elapsed = 0;
+  uint32_t timeout = 10000; // 10 seconds
+  while(elapsed < timeout)
+  {
+    std::ifstream infile(alignedAPK.c_str());
+    if(infile.good())
+    {
+      RDCLOG("Aligned APK ready to go, continuing...");
+      return true;
+    }
+
+    Threading::Sleep(1000);
+    elapsed += 1000;
+  }
+
+  RDCERR("Timeout reached aligning APK");
+  return false;
+}
+} //namespace Android
 
 using namespace Android;
 extern "C" RENDERDOC_API void RENDERDOC_CC RENDERDOC_EnumerateAndroidDevices(rdctype::str *deviceList)
@@ -660,46 +747,42 @@ extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_CheckAndroidVulkanLayer(rdc
 {
   string packageName(exe.c_str());
 
-  // Check the application for RenderDoc layer
+  // Find the path to package
   string pkgPath = adbExecCommand("shell pm path " + packageName).strStdout;
 
-  RDCLOG("packageName: %s", packageName.c_str());
-  RDCLOG("pkgPath: %s", pkgPath.c_str());
-
-  // remove the preamble
+  // Remove the preamble and suffix
   pkgPath.erase(pkgPath.begin(), pkgPath.begin() + sizeof("package:") - 1);
-
-  // remove the base.apk
   pkgPath.erase(pkgPath.end() - sizeof("base.apk"), pkgPath.end());
-  RDCLOG("pkgPath shortened: %s", pkgPath.c_str());
+  pkgPath += "lib";
 
-  // search the lib directory for our layer, ignoring ABI for now
-  string findLayer = adbExecCommand("shell find " + pkgPath + "lib -name libVkLayer_RenderDoc.so").strStdout;
-  RDCLOG("findLayer: %s", findLayer.c_str());
+  // First, see if the application contains the layer
+  if(SearchForAndroidLayer(pkgPath))
+    return true;
 
-  // TODO: Also check /data/local/debug/vulkan, which rooted phones can place layers into
+  // Next, check a debug location only usable by rooted devices
+  if(SearchForAndroidLayer("/data/local/debug/vulkan"))
+    return true;
 
-  // TODO: Leave the option open of checking other locations in the future
+  // TODO: Add any future layer locations
 
-  // if we got a hit, we'll get output, otherwise nothing
-
-// CLN HACK HACK HACK
-return false; // force patching
-
-  if(findLayer.empty())
-  {
-    RDCERR("Your app is missing the RenderDoc layer - we should pop something up here!");
-    return false;
-  }
-
-  return true;
+  // If we got here, no layer was found
+  RDCERR("No RenderDoc layer for Vulkan was found");
+  return false;
 }
 
 extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_AddLayerToAndroidPackage(rdctype::str const& exe)
 {
   Process::ProcessResult result = {};
-
   string packageName(exe.c_str());
+
+  // 
+  // Check requirements
+  //
+  //linux
+  //type -t %s
+  //windows
+  //??
+  
 
   // Find the APK
   string pkgPath = adbExecCommand("shell pm path " + packageName).strStdout;
@@ -709,8 +792,8 @@ extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_AddLayerToAndroidPackage(rd
   pkgPath.erase(pkgPath.end() - 1, pkgPath.end());
 
   // Pull the APK into tmp
-#if defined(RDC_WIN32)
-  string tmpDir("%USERPROFILE%\AppData\Local\Temp");
+#if ENABLED(RDOC_WIN32)
+  string tmpDir("%USERPROFILE%\\AppData\\Local\\Temp\\");
 #else
   string tmpDir("/tmp/");
 #endif
@@ -721,64 +804,43 @@ extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_AddLayerToAndroidPackage(rd
   // TODO:  Check that the APK landed
 
   // TODO:  Inspect the APK for the basics:
-  //          android.permission.WRITE_EXTERNAL_STORAGE
-  //          is debuggable
+  //        - android.permission.WRITE_EXTERNAL_STORAGE
+  //        - is debuggable
 
-  //
-  // Remove any existing signature
-  //
+  if(!RemoveAPKSignature(origAPK))
+    return false;
 
-  // Get the list of files in META-INF
-  string aaptArgs("list " + origAPK);
-  RDCLOG("aapt args: %s", aaptArgs.c_str());
-  Process::LaunchProcess("aapt", ".", aaptArgs.c_str(), &result);
-  // Walk through the output.  If it starts with META-INF, remove it.
-  RDCLOG("Removing existing signature");
-  std::stringstream contents(result.strStdout);
-  string line;
-  string prefix("META-INF");
-  while(std::getline(contents, line, '\n'))
-  {
-    //RDCLOG("line = %s", line.c_str());
-    if(line.compare(0, prefix.size(), prefix) == 0)
-    {
-      RDCLOG("match foundline = %s", line.c_str());
-      Process::LaunchProcess("aapt", ".", string("remove " + origAPK + " " + line).c_str(), &result);
-    }
-  }
-
-  //
-  // Add the RenderDoc layer
-  //
-
-  RDCLOG("Adding RenderDoc layer");
-  string layerPath("/tmp/libVkLayer_RenderDoc.so");
-  Process::LaunchProcess("aapt", tmpDir.c_str(), string("add " + origAPK + " " + "lib/armeabi-v7a/libVkLayer_RenderDoc.so").c_str(), &result);
+  // NOTE: Temporary hack to required relative path of known layer location
+  if(!AddLayerToAPK(origAPK, "lib/armeabi-v7a/libVkLayer_RenderDoc.so", tmpDir))
+    return false;
 
   // Pause for a moment
-  Threading::Sleep(1000);
+  //Threading::Sleep(1000);
 
-  // Re-align the APK for performance
-  RDCLOG("Realigning APK");
   string alignedAPK(origAPK + ".aligned.apk");
-  Process::LaunchProcess("zipalign", tmpDir.c_str(), string("4 " + origAPK + " " + alignedAPK).c_str(), &result);
+  if(!RealignAPK(origAPK, alignedAPK, tmpDir))
+    return false;
 
-  // Wait until the aligned version exists
-  uint32_t elapsed = 0;
-  uint32_t timeout = 10000; // 10 seconds
-  while(elapsed < timeout)
-  {
-    RDCLOG("checking for aligned APK");
-    std::ifstream infile(alignedAPK.c_str());
-    if(infile.good())
-    {
-      RDCLOG("Found it!");
-      break;
-    }
-
-    Threading::Sleep(1000);
-    elapsed += 1000;
-  }
+//  // Re-align the APK for performance
+//  RDCLOG("Realigning APK");
+//  Process::LaunchProcess("zipalign", tmpDir.c_str(), string("4 " + origAPK + " " + alignedAPK).c_str(), &result);
+//
+//  // Wait until the aligned version exists
+//  uint32_t elapsed = 0;
+//  uint32_t timeout = 10000; // 10 seconds
+//  while(elapsed < timeout)
+//  {
+//    RDCLOG("checking for aligned APK");
+//    std::ifstream infile(alignedAPK.c_str());
+//    if(infile.good())
+//    {
+//      RDCLOG("Found it!");
+//      break;
+//    }
+//
+//    Threading::Sleep(1000);
+//    elapsed += 1000;
+//  }
 
   // Debug sign it
   RDCLOG("Signing with debug key");
@@ -807,6 +869,8 @@ extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_AddLayerToAndroidPackage(rd
   // Walk through the output.  If it starts with META-INF, we're good
   RDCLOG("Checking for signature");
   std::stringstream contents2(result.strStdout);
+  string line;
+  string prefix("META-INF");
   bool matchFound = false;
   while(!matchFound && std::getline(contents2, line, '\n'))
   {
@@ -831,8 +895,8 @@ extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_AddLayerToAndroidPackage(rd
   // Wait until uninstall completes
   string uninstallResult;
   bool uninstalled = false;
-  elapsed = 0;
-  timeout = 10000; // 10 seconds
+  uint32_t elapsed = 0;
+  uint32_t timeout = 10000; // 10 seconds
   while(elapsed < timeout)
   {
     RDCLOG("checking for package");

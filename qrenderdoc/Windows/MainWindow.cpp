@@ -303,7 +303,9 @@ void MainWindow::OnCaptureTrigger(const QString &exe, const QString &workingDir,
     rdctype::str exeName(QFileInfo(exe).fileName().toStdString());
     if(!RENDERDOC_CheckAndroidVulkanLayer(exeName))
     {
-      LambdaThread *patch = new LambdaThread([this, exe, exeName]() {
+      bool continueWithLaunch = true;
+
+      LambdaThread *patch = new LambdaThread([this, exe, exeName, &continueWithLaunch]() {
 
         QString caption = tr("Missing Vulkan layer");
 
@@ -332,6 +334,7 @@ void MainWindow::OnCaptureTrigger(const QString &exe, const QString &workingDir,
         if(prompt == QMessageBox::Yes)
         {
           // call into APK pull, patch, install routine, then continue
+          // TODO:  CopyCaptureToRemote has a good example of feeding progress back to the UI
           if(RENDERDOC_AddLayerToAndroidPackage(exeName))
           {
               // Sucess!  Continue with the launch
@@ -341,20 +344,19 @@ void MainWindow::OnCaptureTrigger(const QString &exe, const QString &workingDir,
             RDDialog::critical(this, tr("Failed to patch APK"),
               tr("Something has gone wrong and APK patching failed for:<br>%1<br>Check diagnostic log in Help "
                  "menu for more details.").arg(exe));
+            continueWithLaunch = false;
             return;
           }
         }
         else if (prompt == QMessageBox::Cancel)
         {
           // Bail unceremoniously
-          // ?? RDCLOG("No layer detected, cancelling launch");
+          continueWithLaunch = false;
           return;
         }
         else
         {
           // QMessageBox::No == continue - that's not intuitive, need to hook up custom buttons
-          // ?? RDCASSERT(patch == QMessageBox::No);
-          // ?? RDCLOG("No layer detected, but continuing with launch");
         }
       });
 
@@ -367,6 +369,9 @@ void MainWindow::OnCaptureTrigger(const QString &exe, const QString &workingDir,
                            [patch]() { return !patch->isRunning(); });
       }
       patch->deleteLater();
+
+      if(!continueWithLaunch)
+        return;
     }
   }
   
