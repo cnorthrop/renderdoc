@@ -704,6 +704,64 @@ bool RealignAPK(const string& apk, string& alignedAPK, const string& tmpDir)
   RDCERR("Timeout reached aligning APK");
   return false;
 }
+
+bool DebugSignAPK(const string& apk, const string& workDir)
+{
+  RDCLOG("Signing with debug key");
+
+  execCommand("bash -lc \"apksigner sign "
+              "--ks ~/.android/debug.keystore "
+              "--ks-pass pass:android "
+              "--key-pass pass:android "
+              "--ks-key-alias androiddebugkey "
+              + apk + "\"", workDir);
+
+  // Check for signature
+  string list = execCommand("aapt list " + apk).strStdout;
+
+  // Walk through the output.  If it starts with META-INF, we're good
+  std::stringstream contents(list);
+  string line;
+  string prefix("META-INF");
+  while(std::getline(contents, line, '\n'))
+  {
+    if(line.compare(0, prefix.size(), prefix) == 0)
+    {
+      RDCLOG("Signature found, continuing...");
+      return true;
+    }
+  }
+
+  RDCERR("re-sign of APK failed!");
+  return false;
+}
+
+bool UninstallOriginalAPK(const string& packageName, const string& workDir)
+{
+  RDCLOG("Uninstalling previous version of application");
+
+  execCommand("adb uninstall " + packageName, workDir);
+
+  // Wait until uninstall completes
+  string uninstallResult;
+  uint32_t elapsed = 0;
+  uint32_t timeout = 10000; // 10 seconds
+  while(elapsed < timeout)
+  {
+    uninstallResult = adbExecCommand("shell pm path foo" + packageName).strStdout;
+    if(uninstallResult.empty())
+    {
+      RDCLOG("Package removed");
+      return true;
+    }
+
+    Threading::Sleep(1000);
+    elapsed += 1000;
+  }
+
+  RDCERR("Uninstallation of APK failed!");
+  return false;
+}
 } //namespace Android
 
 using namespace Android;
@@ -779,7 +837,9 @@ extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_AddLayerToAndroidPackage(rd
   // Check requirements
   //
   //linux
-  //type -t %s
+  //type -t %sA
+  // check for aapt, zipalign, apksigner, debug key
+    
   //windows
   //??
   
@@ -810,113 +870,49 @@ extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_AddLayerToAndroidPackage(rd
   if(!RemoveAPKSignature(origAPK))
     return false;
 
-  // NOTE: Temporary hack to required relative path of known layer location
+  // NOTE: Temporary hack to known layer location (must be relative)
   if(!AddLayerToAPK(origAPK, "lib/armeabi-v7a/libVkLayer_RenderDoc.so", tmpDir))
     return false;
-
-  // Pause for a moment
-  //Threading::Sleep(1000);
 
   string alignedAPK(origAPK + ".aligned.apk");
   if(!RealignAPK(origAPK, alignedAPK, tmpDir))
     return false;
 
-//  // Re-align the APK for performance
-//  RDCLOG("Realigning APK");
-//  Process::LaunchProcess("zipalign", tmpDir.c_str(), string("4 " + origAPK + " " + alignedAPK).c_str(), &result);
+  if(!DebugSignAPK(alignedAPK, tmpDir))
+    return false;
+
+  if(!UninstallOriginalAPK(packageName, tmpDir))
+    return false;
+
+//  // Uninstall the current version
+//  RDCLOG("Uninstalling previous version");
+//  Process::LaunchProcess("adb", tmpDir.c_str(), string("uninstall " + packageName).c_str(), &result);
 //
-//  // Wait until the aligned version exists
+//  // Wait until uninstall completes
+//  string uninstallResult;
+//  bool uninstalled = false;
 //  uint32_t elapsed = 0;
 //  uint32_t timeout = 10000; // 10 seconds
 //  while(elapsed < timeout)
 //  {
-//    RDCLOG("checking for aligned APK");
-//    std::ifstream infile(alignedAPK.c_str());
-//    if(infile.good())
+//    RDCLOG("checking for package");
+//    uninstallResult = adbExecCommand("shell pm path " + packageName).strStdout;
+//    if(uninstallResult.empty())
 //    {
-//      RDCLOG("Found it!");
+//      uninstalled = true;
+//      RDCLOG("Package removed!");
 //      break;
 //    }
 //
 //    Threading::Sleep(1000);
 //    elapsed += 1000;
 //  }
-
-  // Debug sign it
-  RDCLOG("Signing with debug key");
-  RDCLOG("about to run: %s", string("bash -lc \"apksigner sign --ks ~/.android/debug.keystore --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey " + origAPK + ".aligned.apk\"").c_str());
-//  Process::LaunchProcess("apksigner",
-//    //tmpDir.c_str(),
-//    "/home/cody/Android/Sdk/build-tools/25.0.2/",
-//    string("sign --ks ~/.android/debug.keystore --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey " + origAPK + ".aligned.apk").c_str(), &result);
-
-  Process::LaunchProcess("bash",
-    //tmpDir.c_str(),
-    "/home/cody/Android/Sdk/build-tools/25.0.2/",
-    string("-lc \"apksigner sign --ks ~/.android/debug.keystore --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey " + origAPK + ".aligned.apk\"").c_str(), &result);
-
-  char* pPath;
-  pPath = getenv ("PATH");
-
-  RDCLOG("Here is the path we used: %s", pPath);
-  RDCLOG("stdout of signing: %s", result.strStdout.c_str());
-  RDCLOG("stderr of signing: %s", result.strStderror.c_str());
- 
-  // Check for signature
-  string sigCheckArgs("list " + origAPK + ".aligned.apk");
-  RDCLOG("sig check args: %s", sigCheckArgs.c_str());
-  Process::LaunchProcess("aapt", ".", sigCheckArgs.c_str(), &result);
-  // Walk through the output.  If it starts with META-INF, we're good
-  RDCLOG("Checking for signature");
-  std::stringstream contents2(result.strStdout);
-  string line;
-  string prefix("META-INF");
-  bool matchFound = false;
-  while(!matchFound && std::getline(contents2, line, '\n'))
-  {
-    if(line.compare(0, prefix.size(), prefix) == 0)
-    {
-      RDCLOG("match foundline = %s", line.c_str());
-      matchFound = true;
-      break;
-    }
-  }
-
-  if(!matchFound)
-  {
-    RDCERR("re-sign of APK failed!");
-    return false;
-  }
- 
-  // Uninstall the current version
-  RDCLOG("Uninstalling previous version");
-  Process::LaunchProcess("adb", tmpDir.c_str(), string("uninstall " + packageName).c_str(), &result);
-
-  // Wait until uninstall completes
-  string uninstallResult;
-  bool uninstalled = false;
-  uint32_t elapsed = 0;
-  uint32_t timeout = 10000; // 10 seconds
-  while(elapsed < timeout)
-  {
-    RDCLOG("checking for package");
-    uninstallResult = adbExecCommand("shell pm path " + packageName).strStdout;
-    if(uninstallResult.empty())
-    {
-      uninstalled = true;
-      RDCLOG("Package removed!");
-      break;
-    }
-
-    Threading::Sleep(1000);
-    elapsed += 1000;
-  }
-
-  if(!uninstalled)
-  {
-    RDCERR("uninstallation of APK failed!");
-    return false;
-  }
+//
+//  if(!uninstalled)
+//  {
+//    RDCERR("uninstallation of APK failed!");
+//    return false;
+//  }
  
   // Re-install it
   RDCLOG("Reinstalling APK");
@@ -925,8 +921,8 @@ extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_AddLayerToAndroidPackage(rd
   // Wait until re-install completes
   string reinstallResult;
   bool reinstalled = false;
-  elapsed = 0;
-  timeout = 10000; // 10 seconds
+  uint32_t elapsed = 0;
+  uint32_t timeout = 10000; // 10 seconds
   while(elapsed < timeout)
   {
     RDCLOG("checking for package");
