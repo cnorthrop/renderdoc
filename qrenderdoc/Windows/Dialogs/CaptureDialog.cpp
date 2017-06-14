@@ -112,6 +112,8 @@ CaptureDialog::CaptureDialog(ICaptureContext &ctx, OnCaptureMethod captureCallba
   // sort by PID by default
   ui->processList->sortByColumn(1, Qt::AscendingOrder);
 
+
+  // Set up host warning for layer config
   ui->vulkanLayerWarn->setVisible(RENDERDOC_NeedVulkanLayerRegistration(NULL, NULL, NULL));
 
   QObject::connect(ui->vulkanLayerWarn, &RDLabel::clicked, this,
@@ -138,6 +140,34 @@ CaptureDialog::CaptureDialog(ICaptureContext &ctx, OnCaptureMethod captureCallba
   ui->vulkanLayerWarn->setAutoFillBackground(true);
 
   ui->vulkanLayerWarn->setMouseTracking(true);
+
+  // Set up warning for Android layer
+  ui->androidLayerWarn->setVisible(false);
+
+  QObject::connect(ui->androidLayerWarn, &RDLabel::clicked, this,
+                   &CaptureDialog::androidLayerWarn_mouseClick);
+
+  pal = ui->androidLayerWarn->palette();
+
+  base = pal.color(QPalette::ToolTipBase);
+
+  pal.setColor(QPalette::Foreground, pal.color(QPalette::ToolTipText));
+
+  pal.setColor(QPalette::Window, base);
+  pal.setColor(QPalette::Base, base.darker(120));
+
+  ui->androidLayerWarn->setBackgroundRole(QPalette::Window);
+
+  QObject::connect(ui->androidLayerWarn, &RDLabel::mouseMoved, [this](QMouseEvent *) {
+    ui->androidLayerWarn->setBackgroundRole(QPalette::Base);
+  });
+  QObject::connect(ui->androidLayerWarn, &RDLabel::leave,
+                   [this]() { ui->androidLayerWarn->setBackgroundRole(QPalette::Window); });
+
+  ui->androidLayerWarn->setPalette(pal);
+  ui->androidLayerWarn->setAutoFillBackground(true);
+
+  ui->androidLayerWarn->setMouseTracking(true);
 
   m_CaptureCallback = captureCallback;
   m_InjectCallback = injectCallback;
@@ -397,6 +427,67 @@ void CaptureDialog::vulkanLayerWarn_mouseClick()
   }
 }
 
+void CaptureDialog::androidLayerWarn_mouseClick()
+{
+  QString exe = ui->exePath->text();
+
+  QString caption = tr("Missing RenderDoc layer");
+
+  QString msg =
+    tr("In order to debug on Android, the RenderDoc layer must be present in the "
+       "installed application.<br><br>"
+       "To fix this, you should repackage the APK following guidelines on the "
+       "<a href='http://github.com/baldurk/renderdoc/wiki/Android-Support'>"
+       "RenderDoc Wiki</a><br><br>"
+       "If you are only targeting Vulkan, RenderDoc can try to add the layer for you, "
+       "which requires pulling the APK, patching it, and reinstalling with a debug key. "
+       "This works for many debuggable applications, but not all, especially those that "
+       "check their integrity before launching.<br><br>"
+       "Would you like RenderDoc to try patching your APK and reinstalling it?");
+
+  QMessageBox::StandardButton prompt = RDDialog::question(this, caption, msg);
+
+  if(prompt == QMessageBox::Yes)
+  {
+    float progress = 0.0f;
+    bool patchSucceeded = false;
+
+    // call into APK pull, patch, install routine, then continue
+    LambdaThread *patch = new LambdaThread([this, exe, &patchSucceeded, &progress]() {
+      QByteArray hostnameBytes = m_Ctx.Replay().CurrentRemote()->Hostname.toUtf8();
+      if(RENDERDOC_AddLayerToAndroidPackage(hostnameBytes.data(), exe.toStdString().c_str(), &progress))
+      {
+        // Sucess!
+        patchSucceeded = true;
+
+        RDDialog::messageBox(QMessageBox::NoIcon, this, tr("Patch succeeded!"),
+          tr("The patch process succeeded and %1 now contains the RenderDoc layer")
+             .arg(exe));
+      }
+      else
+      {
+        RDDialog::critical(this, tr("Failed to patch APK"),
+          tr("Something has gone wrong and APK patching failed for:<br>%1<br>Check diagnostic log in Help "
+             "menu for more details.").arg(exe));
+      }
+    });
+
+    patch->start();
+    // wait a few ms before popping up a progress bar
+    patch->wait(500);
+    if(patch->isRunning())
+    {
+      ShowProgressDialog(this, tr("Patching %1, please wait...").arg(exe),
+                         [patch]() { return !patch->isRunning(); },
+                         [&progress]() { return progress; });
+    }
+    patch->deleteLater();
+
+    if(patchSucceeded)
+      ui->androidLayerWarn->setVisible(false);
+  }
+}
+
 void CaptureDialog::on_processRefesh_clicked()
 {
   fillProcessList();
@@ -433,8 +524,16 @@ void CaptureDialog::on_exePathBrowse_clicked()
     filename = RDDialog::getExecutableFileName(this, tr("Choose executable"), initDir);
   }
 
-  if(!filename.isEmpty())
+  if (!filename.isEmpty())
+  {
     SetExecutableFilename(filename);
+
+    if (m_Ctx.Replay().CurrentRemote() && m_Ctx.Replay().CurrentRemote()->Hostname.startsWith(lit("adb:")))
+    {
+      QByteArray hostnameBytes = m_Ctx.Replay().CurrentRemote()->Hostname.toUtf8();
+      ui->androidLayerWarn->setVisible(!RENDERDOC_CheckAndroidVulkanLayer(hostnameBytes.data(), filename.toStdString().c_str()));
+    }
+  }
 }
 
 void CaptureDialog::on_workDirBrowse_clicked()
