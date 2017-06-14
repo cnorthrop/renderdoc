@@ -24,6 +24,7 @@
  ******************************************************************************/
 
 #include <sstream>
+#include <fstream>
 #include "api/replay/renderdoc_replay.h"
 #include "api/replay/version.h"
 #include "common/common.h"
@@ -678,7 +679,273 @@ uint32_t StartAndroidPackageForCapture(const char *host, const char *package)
 
   return ret;
 }
+
+bool SearchForAndroidLayer(const string& location)
+{
+  RDCLOG("Checking for layers in: %s", location.c_str());
+  string findLayer = adbExecCommand("shell find " + location + " -name libVkLayer_RenderDoc.so").strStdout;
+  if(!findLayer.empty())
+  {
+    RDCLOG("Found RenderDoc layer in %s", location.c_str());
+    return true;
+  }
+  return false;
 }
+
+bool RemoveAPKSignature(const string& apk)
+{
+  RDCLOG("Checking for existing signature");
+
+  // Get the list of files in META-INF
+  string aaptArgs("list " + apk);
+  string fileList = execCommand("aapt list " + apk).strStdout;
+
+  if(fileList.empty())
+    return false;
+
+  // Walk through the output.  If it starts with META-INF, remove it.
+  std::stringstream contents(fileList);
+  string line;
+  string prefix("META-INF");
+  while(std::getline(contents, line, '\n'))
+  {
+    if(line.compare(0, prefix.size(), prefix) == 0)
+    {
+      RDCLOG("match foundline, removing  %s", line.c_str());
+      execCommand("aapt remove " + apk + " " + line);
+    }
+  }
+
+  return true;
+}
+
+bool AddLayerToAPK(const string& apk, const string& layerPath, const string& tmpDir)
+{
+  RDCLOG("Adding RenderDoc layer");
+  string stdOut = execCommand("aapt add " + apk + " " + layerPath, tmpDir).strStdout;
+
+  if(stdOut.empty())
+    return false;
+
+  return true;
+}
+
+bool RealignAPK(const string& apk, string& alignedAPK, const string& tmpDir)
+{
+  // Re-align the APK for performance
+  RDCLOG("Realigning APK");
+  string errOut = execCommand("zipalign -f 4 " + apk + " " + alignedAPK, tmpDir).strStderror;
+
+  if(!errOut.empty())
+    return false;
+
+  // Wait until the aligned version exists to proceed
+  uint32_t elapsed = 0;
+  uint32_t timeout = 10000; // 10 seconds
+  while(elapsed < timeout)
+  {
+    std::ifstream infile(alignedAPK.c_str());
+    if(infile.good())
+    {
+      RDCLOG("Aligned APK ready to go, continuing...");
+      return true;
+    }
+
+    Threading::Sleep(1000);
+    elapsed += 1000;
+  }
+
+  RDCERR("Timeout reached aligning APK");
+  return false;
+}
+
+#if ENABLED(RDOC_WIN32)
+static string debugKey("%USERPROFILE%\\.android\\debug.keystore");
+#else
+static string debugKey("~/.android/debug.keystore");
+#endif
+
+bool DebugSignAPK(const string& apk, const string& workDir)
+{
+  RDCLOG("Signing with debug key");
+
+  execCommand("bash -lc \"apksigner sign "
+              "--ks " + debugKey + " "
+              "--ks-pass pass:android "
+              "--key-pass pass:android "
+              "--ks-key-alias androiddebugkey "
+              + apk + "\"", workDir);
+
+  // Check for signature
+  string list = execCommand("aapt list " + apk).strStdout;
+
+  // Walk through the output.  If it starts with META-INF, we're good
+  std::stringstream contents(list);
+  string line;
+  string prefix("META-INF");
+  while(std::getline(contents, line, '\n'))
+  {
+    if(line.compare(0, prefix.size(), prefix) == 0)
+    {
+      RDCLOG("Signature found, continuing...");
+      return true;
+    }
+  }
+
+  RDCERR("re-sign of APK failed!");
+  return false;
+}
+
+bool UninstallOriginalAPK(const string& packageName, const string& workDir)
+{
+  RDCLOG("Uninstalling previous version of application");
+
+  execCommand("adb uninstall " + packageName, workDir);
+
+  // Wait until uninstall completes
+  string uninstallResult;
+  uint32_t elapsed = 0;
+  uint32_t timeout = 10000; // 10 seconds
+  while(elapsed < timeout)
+  {
+    uninstallResult = adbExecCommand("shell pm path foo" + packageName).strStdout;
+    if(uninstallResult.empty())
+    {
+      RDCLOG("Package removed");
+      return true;
+    }
+
+    Threading::Sleep(1000);
+    elapsed += 1000;
+  }
+
+  RDCERR("Uninstallation of APK failed!");
+  return false;
+}
+
+bool ReinstallPatchedAPK(const string& apk, const string& packageName, const string& workDir)
+{
+  RDCLOG("Reinstalling APK");
+
+  // TODO: Determine correct ABI to install
+
+  execCommand("adb install --abi armeabi-v7a " + apk, workDir);
+
+  // Wait until re-install completes
+  string reinstallResult;
+  uint32_t elapsed = 0;
+  uint32_t timeout = 10000; // 10 seconds
+  while(elapsed < timeout)
+  {
+    reinstallResult = adbExecCommand("shell pm path " + packageName).strStdout;
+    if(!reinstallResult.empty())
+    {
+      RDCLOG("Patched APK reinstalled, continuing...");
+      return true;
+    }
+
+    Threading::Sleep(1000);
+    elapsed += 1000;
+  }
+
+  RDCERR("Reinstallation of APK failed!");
+  return false;
+}
+
+bool CheckPatchingRequirements()
+{
+  // check for aapt, zipalign, apksigner, debug key
+  vector<string> requirements;
+  vector<string> missingTools;
+  requirements.push_back("aapt");
+  requirements.push_back("zipalign");
+  requirements.push_back("apksigner");
+#if ENABLED(RDOC_WIN32)
+  //windows
+  //??
+#else
+  for(uint32_t i = 0; i < requirements.size(); i++)
+  {
+    if(execCommand("which " + requirements[i]).strStdout.empty())
+      missingTools.push_back(requirements[i]);
+  }
+
+  if(execCommand("bash -lc \"stat " + debugKey + "\"").strStdout.empty())
+    missingTools.push_back(debugKey);
+#endif
+
+  if(missingTools.size() > 0)
+  {
+    for(uint32_t i = 0; i < missingTools.size(); i++)
+      RDCERR("Missing %s", missingTools[i].c_str());
+    return false;
+  }
+
+ return true;
+}
+
+bool PullAPK(const string& pkgPath, const string& apk)
+{
+  RDCLOG("Pulling APK to patch");
+
+  adbExecCommand("pull " + pkgPath + " " + apk);
+
+  // Wait until the apk lands
+  uint32_t elapsed = 0;
+  uint32_t timeout = 10000; // 10 seconds
+  while(elapsed < timeout)
+  {
+    std::ifstream infile(apk.c_str());
+    if(infile.good())
+    {
+      RDCLOG("Original APK ready to go, continuing...");
+      return true;
+    }
+
+    Threading::Sleep(1000);
+    elapsed += 1000;
+  }
+
+  RDCERR("Failed to pull APK");
+  return false;
+}
+
+bool CheckPermissions(const string& apk)
+{
+  RDCLOG("Checking that APK can be can write to sdcard");
+
+  string badging = execCommand("aapt dump badging " + apk).strStdout;
+
+  if(badging.find("android.permission.WRITE_EXTERNAL_STORAGE") == string::npos)
+  {
+    RDCERR("APK missing WRITE_EXTERNAL_STORAGE permission");
+    return false;
+  }
+
+  if(badging.find("android.permission.INTERNET") == string::npos)
+  {
+    RDCERR("APK missing WRITE_EXTERNAL_STORAGE permission");
+    return false;
+  }
+
+  return true;
+}
+
+bool CheckDebuggable(const string& apk)
+{
+  RDCLOG("Checking that APK s debuggable");
+
+  string badging = execCommand("aapt dump badging " + apk).strStdout;
+
+  if(badging.find("application-debuggable"))
+  {
+    RDCERR("APK is not debuggable");
+    return false;
+  }
+
+  return true;
+}
+} //namespace Android
 
 using namespace Android;
 extern "C" RENDERDOC_API void RENDERDOC_CC RENDERDOC_GetAndroidFriendlyName(const rdctype::str &device,
@@ -888,6 +1155,84 @@ extern "C" RENDERDOC_API void RENDERDOC_CC RENDERDOC_StartAndroidRemoteServer(co
   adbExecCommand(
       deviceID,
       "shell am start -n org.renderdoc.renderdoccmd/.Loader -e renderdoccmd remoteserver");
+}
+
+extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_CheckAndroidVulkanLayer(rdctype::str const& exe)
+{
+  string packageName(exe.c_str());
+
+  // Find the path to package
+  string pkgPath = adbExecCommand("shell pm path " + packageName).strStdout;
+  pkgPath.erase(pkgPath.begin(), pkgPath.begin() + sizeof("package:") - 1);
+  pkgPath.erase(pkgPath.end() - sizeof("base.apk"), pkgPath.end());
+  pkgPath += "lib";
+
+  // First, see if the application contains the layer
+  if(SearchForAndroidLayer(pkgPath))
+    return true;
+
+  // Next, check a debug location only usable by rooted devices
+  if(SearchForAndroidLayer("/data/local/debug/vulkan"))
+    return true;
+
+  // TODO: Add any future layer locations
+
+  RDCERR("No RenderDoc layer for Vulkan was found");
+  return false;
+}
+
+extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_AddLayerToAndroidPackage(rdctype::str const& exe)
+{
+  Process::ProcessResult result = {};
+  string packageName(exe.c_str());
+
+  if(!CheckPatchingRequirements())
+    return false;
+
+  // Find the APK
+  string pkgPath = adbExecCommand("shell pm path " + packageName).strStdout;
+
+  // Remove the preamble and newline
+  pkgPath.erase(pkgPath.begin(), pkgPath.begin() + sizeof("package:") - 1);
+  pkgPath.erase(pkgPath.end() - 1, pkgPath.end());
+
+  // Pull the APK into tmp
+#if ENABLED(RDOC_WIN32)
+  string tmpDir("%USERPROFILE%\\AppData\\Local\\Temp\\");
+#else
+  string tmpDir("/tmp/");
+#endif
+
+  string origAPK(tmpDir + packageName + ".orig.apk");
+  string alignedAPK(origAPK + ".aligned.apk");
+
+  if(!PullAPK(pkgPath, origAPK))
+    return false;
+
+  if(!CheckPermissions(origAPK))
+    return false;
+
+  if(!RemoveAPKSignature(origAPK))
+    return false;
+
+  // NOTE: Temporary hack to known layer location (must be relative)
+  if(!AddLayerToAPK(origAPK, "lib/armeabi-v7a/libVkLayer_RenderDoc.so", tmpDir))
+    return false;
+
+  if(!RealignAPK(origAPK, alignedAPK, tmpDir))
+    return false;
+
+  if(!DebugSignAPK(alignedAPK, tmpDir))
+    return false;
+
+  if(!UninstallOriginalAPK(packageName, tmpDir))
+    return false;
+
+  if(!ReinstallPatchedAPK(alignedAPK, packageName, tmpDir))
+    return false;
+
+  // All clean, onward to launching
+  return true;
 }
 
 extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_NeedVulkanLayerRegistration(

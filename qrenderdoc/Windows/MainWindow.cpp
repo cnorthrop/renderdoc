@@ -298,6 +298,83 @@ void MainWindow::OnCaptureTrigger(const QString &exe, const QString &workingDir,
   if(!PromptCloseLog())
     return;
 
+  if(m_Ctx.Replay().CurrentRemote() && m_Ctx.Replay().CurrentRemote()->Hostname.startsWith(lit("adb:")))
+  {
+    rdctype::str exeName(QFileInfo(exe).fileName().toStdString());
+    if(!RENDERDOC_CheckAndroidVulkanLayer(exeName))
+    {
+      bool continueWithLaunch = true;
+
+      LambdaThread *patch = new LambdaThread([this, exe, exeName, &continueWithLaunch]() {
+
+        QString caption = tr("Missing Vulkan layer");
+
+        QString msg =
+          tr("In order to debug Vulkan on Android, the RenderDoc layer must be present in the "
+             "installed application.<br><br>"
+             "RenderDoc can try to add the layer, which requires pull the APK, patching it, and "
+             "reinstalling with a debug key.  This works for many debuggable applications, but "
+             "not all, especially those that check their integrity before launching.<br><br>"
+             "Alternatively you can repackage the APK yourself following guidelines on the "
+             "<a href='http://github.com/baldurk/renderdoc/wiki/Android-Support'>RenderDoc Wiki</a><br><br>"
+             "Or you can choose to continue the process, which would work for the following scenarios:"
+             "<ul>"
+             "  <li>OpenGL ES debugging</li>"
+             "  <li>Custom Vulkan layer location</li>"
+             "</ul>"
+             "Would you like RenderDoc to try patching your APK and reinstalling it?<br><br>"
+             "<b>Cancel</b>: Cancel the launch<br>"
+             "<b>No</b>:     Don't patch, but continue and try to connect<br>"
+             "<b>Yes</b>:    Attempt patching and reinstall<br>");
+
+        // TODO: The ideal buttons would be "Patch, Cancel, Continue", but that requires custom buttons
+        QMessageBox::StandardButton prompt = RDDialog::question(this, caption, msg,
+          QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
+
+        if(prompt == QMessageBox::Yes)
+        {
+          // call into APK pull, patch, install routine, then continue
+          // TODO:  CopyCaptureToRemote has a good example of feeding progress back to the UI
+          if(RENDERDOC_AddLayerToAndroidPackage(exeName))
+          {
+              // Sucess!  Continue with the launch
+          }
+          else
+          {
+            RDDialog::critical(this, tr("Failed to patch APK"),
+              tr("Something has gone wrong and APK patching failed for:<br>%1<br>Check diagnostic log in Help "
+                 "menu for more details.").arg(exe));
+            continueWithLaunch = false;
+            return;
+          }
+        }
+        else if (prompt == QMessageBox::Cancel)
+        {
+          // Bail unceremoniously
+          continueWithLaunch = false;
+          return;
+        }
+        else
+        {
+          // QMessageBox::No == continue - that's not intuitive, need to hook up custom buttons
+        }
+      });
+
+      patch->start();
+      // wait a few ms before popping up a progress bar
+      patch->wait(500);
+      if(patch->isRunning())
+      {
+        ShowProgressDialog(this, tr("Patching %1, please wait...").arg(exe),
+                           [patch]() { return !patch->isRunning(); });
+      }
+      patch->deleteLater();
+
+      if(!continueWithLaunch)
+        return;
+    }
+  }
+
   LambdaThread *th = new LambdaThread([this, exe, workingDir, cmdLine, env, opts, callback]() {
     QString logfile = m_Ctx.TempLogFilename(QFileInfo(exe).baseName());
 
