@@ -705,12 +705,18 @@ bool RealignAPK(const string& apk, string& alignedAPK, const string& tmpDir)
   return false;
 }
 
+#if ENABLED(RDOC_WIN32)
+static string debugKey("%USERPROFILE%\\.android\\debug.keystore");
+#else
+static string debugKey("~/.android/debug.keystore");
+#endif
+
 bool DebugSignAPK(const string& apk, const string& workDir)
 {
   RDCLOG("Signing with debug key");
 
   execCommand("bash -lc \"apksigner sign "
-              "--ks ~/.android/debug.keystore "
+              "--ks " + debugKey + " "
               "--ks-pass pass:android "
               "--key-pass pass:android "
               "--ks-key-alias androiddebugkey "
@@ -810,8 +816,8 @@ bool CheckPatchingRequirements()
       missingTools.push_back(requirements[i]);
   }
 
-  if(execCommand("bash -lc \"stat ~/.android/debug.keystore\"").strStdout.empty())
-    missingTools.push_back("~/.android/debug.keystore");
+  if(execCommand("bash -lc \"stat " + debugKey + "\"").strStdout.empty())
+    missingTools.push_back(debugKey);
 #endif
 
   if(missingTools.size() > 0)
