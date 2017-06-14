@@ -59,7 +59,7 @@ string GetHomeFolderFilename()
   return homedir;
 }
 
-string GetTempFolderName()
+string GetTempFolderFilename()
 {
   return string(GetTempRootPath()) + "/";
 }
