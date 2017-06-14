@@ -762,6 +762,35 @@ bool UninstallOriginalAPK(const string& packageName, const string& workDir)
   RDCERR("Uninstallation of APK failed!");
   return false;
 }
+
+bool ReinstallPatchedAPK(const string& apk, const string& packageName, const string& workDir)
+{
+  RDCLOG("Reinstalling APK");
+
+  // TODO: Determine correct ABI to install
+
+  execCommand("adb install --abi armeabi-v7a " + apk, workDir);
+
+  // Wait until re-install completes
+  string reinstallResult;
+  uint32_t elapsed = 0;
+  uint32_t timeout = 10000; // 10 seconds
+  while(elapsed < timeout)
+  {
+    reinstallResult = adbExecCommand("shell pm path " + packageName).strStdout;
+    if(!reinstallResult.empty())
+    {
+      RDCLOG("Patched APK reinstalled, continuing...");
+      return true;
+    }
+
+    Threading::Sleep(1000);
+    elapsed += 1000;
+  }
+
+  RDCERR("Reinstallation of APK failed!");
+  return false;
+}
 } //namespace Android
 
 using namespace Android;
@@ -884,66 +913,10 @@ extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_AddLayerToAndroidPackage(rd
   if(!UninstallOriginalAPK(packageName, tmpDir))
     return false;
 
-//  // Uninstall the current version
-//  RDCLOG("Uninstalling previous version");
-//  Process::LaunchProcess("adb", tmpDir.c_str(), string("uninstall " + packageName).c_str(), &result);
-//
-//  // Wait until uninstall completes
-//  string uninstallResult;
-//  bool uninstalled = false;
-//  uint32_t elapsed = 0;
-//  uint32_t timeout = 10000; // 10 seconds
-//  while(elapsed < timeout)
-//  {
-//    RDCLOG("checking for package");
-//    uninstallResult = adbExecCommand("shell pm path " + packageName).strStdout;
-//    if(uninstallResult.empty())
-//    {
-//      uninstalled = true;
-//      RDCLOG("Package removed!");
-//      break;
-//    }
-//
-//    Threading::Sleep(1000);
-//    elapsed += 1000;
-//  }
-//
-//  if(!uninstalled)
-//  {
-//    RDCERR("uninstallation of APK failed!");
-//    return false;
-//  }
- 
-  // Re-install it
-  RDCLOG("Reinstalling APK");
-  Process::LaunchProcess("adb", tmpDir.c_str(), string("install --abi armeabi-v7a " + origAPK + ".aligned.apk").c_str(), &result);
-
-  // Wait until re-install completes
-  string reinstallResult;
-  bool reinstalled = false;
-  uint32_t elapsed = 0;
-  uint32_t timeout = 10000; // 10 seconds
-  while(elapsed < timeout)
-  {
-    RDCLOG("checking for package");
-    reinstallResult = adbExecCommand("shell pm path " + packageName).strStdout;
-    if(!reinstallResult.empty())
-    {
-      reinstalled = true;
-      RDCLOG("Package installed!");
-      break;
-    }
-
-    Threading::Sleep(1000);
-    elapsed += 1000;
-  }
-
-  if(!reinstalled)
-  {
-    RDCERR("reinstallation of APK failed!");
+  if(!ReinstallPatchedAPK(alignedAPK, packageName, tmpDir))
     return false;
-  }
 
+  // All clean, onward to launching
   return true;
 }
 
