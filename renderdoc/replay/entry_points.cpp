@@ -791,6 +791,100 @@ bool ReinstallPatchedAPK(const string& apk, const string& packageName, const str
   RDCERR("Reinstallation of APK failed!");
   return false;
 }
+
+bool CheckPatchingRequirements()
+{
+  // check for aapt, zipalign, apksigner, debug key
+  vector<string> requirements;
+  vector<string> missingTools;
+  requirements.push_back("aapt");
+  requirements.push_back("zipalign");
+  requirements.push_back("apksigner");
+#if ENABLED(RDOC_WIN32)
+  //windows
+  //??
+#else
+  for(uint32_t i = 0; i < requirements.size(); i++)
+  {
+    if(execCommand("which " + requirements[i]).strStdout.empty())
+      missingTools.push_back(requirements[i]);
+  }
+
+  if(execCommand("bash -lc \"stat ~/.android/debug.keystore\"").strStdout.empty())
+    missingTools.push_back("~/.android/debug.keystore");
+#endif
+
+  if(missingTools.size() > 0)
+  {
+    for(uint32_t i = 0; i < missingTools.size(); i++)
+      RDCERR("Missing %s", missingTools[i].c_str());
+    return false;
+  }
+
+ return true;
+}
+
+bool PullAPK(const string& pkgPath, const string& apk)
+{
+  RDCLOG("Pulling APK to patch");
+
+  adbExecCommand("pull " + pkgPath + " " + apk);
+
+  // Wait until the apk lands
+  uint32_t elapsed = 0;
+  uint32_t timeout = 10000; // 10 seconds
+  while(elapsed < timeout)
+  {
+    std::ifstream infile(apk.c_str());
+    if(infile.good())
+    {
+      RDCLOG("Original APK ready to go, continuing...");
+      return true;
+    }
+
+    Threading::Sleep(1000);
+    elapsed += 1000;
+  }
+
+  RDCERR("Failed to pull APK");
+  return false;
+}
+
+bool CheckPermissions(const string& apk)
+{
+  RDCLOG("Checking that APK can be can write to sdcard");
+
+  string badging = execCommand("aapt dump badging " + apk).strStdout;
+
+  if(badging.find("android.permission.WRITE_EXTERNAL_STORAGE") == string::npos)
+  {
+    RDCERR("APK missing WRITE_EXTERNAL_STORAGE permission");
+    return false;
+  }
+
+  if(badging.find("android.permission.INTERNET") == string::npos)
+  {
+    RDCERR("APK missing WRITE_EXTERNAL_STORAGE permission");
+    return false;
+  }
+
+  return true;
+}
+
+bool CheckDebuggable(const string& apk)
+{
+  RDCLOG("Checking that APK s debuggable");
+
+  string badging = execCommand("aapt dump badging " + apk).strStdout;
+
+  if(badging.find("application-debuggable"))
+  {
+    RDCERR("APK is not debuggable");
+    return false;
+  }
+
+  return true;
+}
 } //namespace Android
 
 using namespace Android;
@@ -836,8 +930,6 @@ extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_CheckAndroidVulkanLayer(rdc
 
   // Find the path to package
   string pkgPath = adbExecCommand("shell pm path " + packageName).strStdout;
-
-  // Remove the preamble and suffix
   pkgPath.erase(pkgPath.begin(), pkgPath.begin() + sizeof("package:") - 1);
   pkgPath.erase(pkgPath.end() - sizeof("base.apk"), pkgPath.end());
   pkgPath += "lib";
@@ -852,7 +944,6 @@ extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_CheckAndroidVulkanLayer(rdc
 
   // TODO: Add any future layer locations
 
-  // If we got here, no layer was found
   RDCERR("No RenderDoc layer for Vulkan was found");
   return false;
 }
@@ -862,16 +953,8 @@ extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_AddLayerToAndroidPackage(rd
   Process::ProcessResult result = {};
   string packageName(exe.c_str());
 
-  // 
-  // Check requirements
-  //
-  //linux
-  //type -t %sA
-  // check for aapt, zipalign, apksigner, debug key
-    
-  //windows
-  //??
-  
+  if(!CheckPatchingRequirements())
+    return false;
 
   // Find the APK
   string pkgPath = adbExecCommand("shell pm path " + packageName).strStdout;
@@ -888,13 +971,13 @@ extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_AddLayerToAndroidPackage(rd
 #endif
 
   string origAPK(tmpDir + packageName + ".orig.apk");
-  result = adbExecCommand("pull " + pkgPath + " " + origAPK);
+  string alignedAPK(origAPK + ".aligned.apk");
 
-  // TODO:  Check that the APK landed
+  if(!PullAPK(pkgPath, origAPK))
+    return false;
 
-  // TODO:  Inspect the APK for the basics:
-  //        - android.permission.WRITE_EXTERNAL_STORAGE
-  //        - is debuggable
+  if(!CheckPermissions(origAPK))
+    return false;
 
   if(!RemoveAPKSignature(origAPK))
     return false;
@@ -903,7 +986,6 @@ extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_AddLayerToAndroidPackage(rd
   if(!AddLayerToAPK(origAPK, "lib/armeabi-v7a/libVkLayer_RenderDoc.so", tmpDir))
     return false;
 
-  string alignedAPK(origAPK + ".aligned.apk");
   if(!RealignAPK(origAPK, alignedAPK, tmpDir))
     return false;
 

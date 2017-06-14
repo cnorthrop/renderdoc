@@ -374,7 +374,7 @@ void MainWindow::OnCaptureTrigger(const QString &exe, const QString &workingDir,
         return;
     }
   }
-  
+
   LambdaThread *th = new LambdaThread([this, exe, workingDir, cmdLine, env, opts, callback]() {
     QString logfile = m_Ctx.TempLogFilename(QFileInfo(exe).baseName());
 
