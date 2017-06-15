@@ -680,10 +680,10 @@ uint32_t StartAndroidPackageForCapture(const char *host, const char *package)
   return ret;
 }
 
-bool SearchForAndroidLayer(const string& location)
+bool SearchForAndroidLayer(const string& location, const string& layerName)
 {
   RDCLOG("Checking for layers in: %s", location.c_str());
-  string findLayer = adbExecCommand("shell find " + location + " -name libVkLayer_RenderDoc.so").strStdout;
+  string findLayer = adbExecCommand("shell find " + location + " -name " + layerName).strStdout;
   if(!findLayer.empty())
   {
     RDCLOG("Found RenderDoc layer in %s", location.c_str());
@@ -722,9 +722,12 @@ bool RemoveAPKSignature(const string& apk)
 bool AddLayerToAPK(const string& apk, const string& layerPath, const string& tmpDir)
 {
   RDCLOG("Adding RenderDoc layer");
-  string stdOut = execCommand("aapt add " + apk + " " + layerPath, tmpDir).strStdout;
+  Process::ProcessResult result = execCommand("aapt add " + apk + " " + layerPath, tmpDir);
 
-  if(stdOut.empty())
+  if(result.strStdout.empty())
+    return false;
+
+  if(!result.strStderror.empty())
     return false;
 
   return true;
@@ -1159,7 +1162,7 @@ extern "C" RENDERDOC_API void RENDERDOC_CC RENDERDOC_StartAndroidRemoteServer(co
 
 extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_CheckAndroidVulkanLayer(rdctype::str const& exe)
 {
-  string packageName(exe.c_str());
+  string packageName(basename(exe.c_str()));
 
   // Find the path to package
   string pkgPath = adbExecCommand("shell pm path " + packageName).strStdout;
@@ -1167,12 +1170,14 @@ extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_CheckAndroidVulkanLayer(rdc
   pkgPath.erase(pkgPath.end() - sizeof("base.apk"), pkgPath.end());
   pkgPath += "lib";
 
+  string layerName = "libVkLayer_RenderDoc.so";
+
   // First, see if the application contains the layer
-  if(SearchForAndroidLayer(pkgPath))
+  if(SearchForAndroidLayer(pkgPath, layerName))
     return true;
 
   // Next, check a debug location only usable by rooted devices
-  if(SearchForAndroidLayer("/data/local/debug/vulkan"))
+  if(SearchForAndroidLayer("/data/local/debug/vulkan", layerName))
     return true;
 
   // TODO: Add any future layer locations
@@ -1184,7 +1189,7 @@ extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_CheckAndroidVulkanLayer(rdc
 extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_AddLayerToAndroidPackage(rdctype::str const& exe)
 {
   Process::ProcessResult result = {};
-  string packageName(exe.c_str());
+  string packageName(basename(exe.c_str()));
 
   if(!CheckPatchingRequirements())
     return false;

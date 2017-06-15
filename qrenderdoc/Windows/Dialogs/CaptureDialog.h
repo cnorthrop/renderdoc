@@ -94,6 +94,7 @@ private slots:
 
   // manual slots
   void vulkanLayerWarn_mouseClick();
+  void androidLayerWarn_mouseClick();
 
 private:
   Ui::CaptureDialog *ui;

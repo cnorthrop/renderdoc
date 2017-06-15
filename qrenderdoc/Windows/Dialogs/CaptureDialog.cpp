@@ -112,6 +112,8 @@ CaptureDialog::CaptureDialog(ICaptureContext &ctx, OnCaptureMethod captureCallba
   // sort by PID by default
   ui->processList->sortByColumn(1, Qt::AscendingOrder);
 
+
+  // Set up host warning for layer config
   ui->vulkanLayerWarn->setVisible(RENDERDOC_NeedVulkanLayerRegistration(NULL, NULL, NULL));
 
   QObject::connect(ui->vulkanLayerWarn, &RDLabel::clicked, this,
@@ -138,6 +140,34 @@ CaptureDialog::CaptureDialog(ICaptureContext &ctx, OnCaptureMethod captureCallba
   ui->vulkanLayerWarn->setAutoFillBackground(true);
 
   ui->vulkanLayerWarn->setMouseTracking(true);
+
+  // Set up warning for Android layer
+  ui->androidLayerWarn->setVisible(false);
+
+  QObject::connect(ui->androidLayerWarn, &RDLabel::clicked, this,
+                   &CaptureDialog::androidLayerWarn_mouseClick);
+
+  pal = ui->androidLayerWarn->palette();
+
+  base = pal.color(QPalette::ToolTipBase);
+
+  pal.setColor(QPalette::Foreground, pal.color(QPalette::ToolTipText));
+
+  pal.setColor(QPalette::Window, base);
+  pal.setColor(QPalette::Base, base.darker(120));
+
+  ui->androidLayerWarn->setBackgroundRole(QPalette::Window);
+
+  QObject::connect(ui->androidLayerWarn, &RDLabel::mouseMoved, [this](QMouseEvent *) {
+    ui->androidLayerWarn->setBackgroundRole(QPalette::Base);
+  });
+  QObject::connect(ui->androidLayerWarn, &RDLabel::leave,
+                   [this]() { ui->androidLayerWarn->setBackgroundRole(QPalette::Window); });
+
+  ui->androidLayerWarn->setPalette(pal);
+  ui->androidLayerWarn->setAutoFillBackground(true);
+
+  ui->androidLayerWarn->setMouseTracking(true);
 
   m_CaptureCallback = captureCallback;
   m_InjectCallback = injectCallback;
@@ -397,6 +427,72 @@ void CaptureDialog::vulkanLayerWarn_mouseClick()
   }
 }
 
+void CaptureDialog::androidLayerWarn_mouseClick()
+{
+  QString exe = ui->exePath->text();
+
+  QString caption = tr("Missing Vulkan layer");
+
+  QString msg =
+    tr("In order to debug Vulkan on Android, the RenderDoc layer must be present in the "
+       "installed application.<br><br>"
+       "RenderDoc can try to add the layer, which requires pull the APK, patching it, and "
+       "reinstalling with a debug key.  This works for many debuggable applications, but "
+       "not all, especially those that check their integrity before launching.<br><br>"
+       "Alternatively you can repackage the APK yourself following guidelines on the "
+       "<a href='http://github.com/baldurk/renderdoc/wiki/Android-Support'>RenderDoc Wiki</a><br><br>"
+       "Or you can choose to continue the process, which would work for the following scenarios:"
+       "<ul>"
+       "  <li>OpenGL ES debugging</li>"
+       "  <li>Custom Vulkan layer location</li>"
+       "</ul>"
+       "Would you like RenderDoc to try patching your APK and reinstalling it?<br><br>"
+       "<b>Cancel</b>: Cancel the launch<br>"
+       "<b>No</b>:     Don't patch, but continue and try to connect<br>"
+       "<b>Yes</b>:    Attempt patching and reinstall<br>");
+
+  // TODO: The ideal buttons would be "Patch, Cancel, Continue", but that requires custom buttons
+  QMessageBox::StandardButton prompt = RDDialog::question(this, caption, msg,
+    QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
+
+  if(prompt == QMessageBox::Yes)
+  {
+    bool patchSucceeded = false;
+
+    // call into APK pull, patch, install routine, then continue
+    LambdaThread *patch = new LambdaThread([this, exe, &patchSucceeded]() {
+      if(RENDERDOC_AddLayerToAndroidPackage(rdctype::str(exe.toStdString())))
+      {
+        // Sucess!
+        patchSucceeded = true;
+
+        RDDialog::information(this, tr("Patch succeeded!"),
+          tr("The patch process succeeded and %1 now contains the RenderDoc layer")
+             .arg(exe));
+      }
+      else
+      {
+        RDDialog::critical(this, tr("Failed to patch APK"),
+          tr("Something has gone wrong and APK patching failed for:<br>%1<br>Check diagnostic log in Help "
+             "menu for more details.").arg(exe));
+      }
+    });
+
+    patch->start();
+    // wait a few ms before popping up a progress bar
+    patch->wait(500);
+    if(patch->isRunning())
+    {
+      ShowProgressDialog(this, tr("Patching %1, please wait...").arg(exe),
+                         [patch]() { return !patch->isRunning(); });
+    }
+    patch->deleteLater();
+
+    if(patchSucceeded)
+      ui->androidLayerWarn->setVisible(false);
+  }
+}
+
 void CaptureDialog::on_processRefesh_clicked()
 {
   fillProcessList();
@@ -434,7 +530,11 @@ void CaptureDialog::on_exePathBrowse_clicked()
   }
 
   if(!filename.isEmpty())
+  {
     SetExecutableFilename(filename);
+
+    ui->androidLayerWarn->setVisible(!RENDERDOC_CheckAndroidVulkanLayer(rdctype::str(filename.toStdString())));
+  }
 }
 
 void CaptureDialog::on_workDirBrowse_clicked()
