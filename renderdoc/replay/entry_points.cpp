@@ -757,42 +757,30 @@ extern "C" RENDERDOC_API void RENDERDOC_CC RENDERDOC_StartAndroidRemoteServer(co
 
   if(adbPackage.empty())
   {
-    bool apkFound = false;
     string targetApk = "RenderDocCmd.apk";
     string serverApk;
 
-    // Walk through local directory tree and find the server APK
-    std::vector<string> workList;
-    workList.push_back(".");
-    RDCLOG("Beginning directory search for %s", targetApk.c_str());
-    while (!apkFound && !workList.empty())
+    // Check known paths for RenderDoc server, relative to exe
+    string exePath;
+    FileIO::GetExecutableFilename(exePath);
+    string exeDir = dirname(FileIO::GetFullPathname(exePath));
+
+    std::vector<std::string> paths;
+    paths.push_back(exeDir + "/android/apk/" + targetApk);                     // Windows
+    paths.push_back(exeDir + "/../share/renderdoc/android/apk/" + targetApk);  // Linux
+    paths.push_back(exeDir + "/../../build-android/bin/" + targetApk);         // Local build
+
+    for(auto& entry : paths)
     {
-      string currentDir = workList.back();
-      workList.pop_back();
-
-      RDCLOG("Searching the following directory: %s", currentDir.c_str());
-      std::vector<PathEntry> files = FileIO::GetFilesInDirectory(currentDir.c_str());
-      for (auto& entry : files)
+      if (FileIO::exists(entry.c_str()))
       {
-        // would be better to enhance rdctype::str, but converting to string is a
-        // shortcut to comparison and + operator below
-        string filename(entry.filename.c_str());
-        if(filename.compare(targetApk) == 0)
-        {
-          apkFound = true;
-          serverApk = currentDir + "/" + filename;
-          RDCLOG("server APK found!: %s", serverApk.c_str());
-          break;
-        }
-
-        if(entry.flags & PathProperty::Directory)
-        {
-          workList.push_back(currentDir + "/" + filename);
-        }
+        serverApk = entry;
+        RDCLOG("server APK found!: %s", serverApk.c_str());
+        break;
       }
     }
 
-    if(!apkFound)
+    if(serverApk.empty())
     {
         RDCERR("%s missing! RenderDoc for Android will not work without it.", targetApk.c_str());
     }
