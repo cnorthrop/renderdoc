@@ -753,7 +753,7 @@ extern "C" RENDERDOC_API void RENDERDOC_CC RENDERDOC_StartAndroidRemoteServer(co
 
   // We should hook up versioning of the server, then re-install if the version is old or mismatched
   // But for now, just install it, if not already present
-  string adbPackage = adbExecCommand(device, "shell pm list packages org.renderdoc.renderdoccmd");
+  string adbPackage = adbExecCommand(deviceID, "shell pm list packages org.renderdoc.renderdoccmd");
 
   if(adbPackage.empty())
   {
@@ -821,26 +821,26 @@ extern "C" RENDERDOC_API void RENDERDOC_CC RENDERDOC_StartAndroidRemoteServer(co
 
     // The 32-bit server works for 32 and 64 bit apps, so simply install
     // 32-bit that matches ABI of the target device
-    string adbAbi = adbExecCommand(device, "shell getprop ro.product.cpu.abi");
+    string adbAbi = adbExecCommand(deviceID, "shell getprop ro.product.cpu.abi");
     string adbInstall;
     switch(abi_string_map[adbAbi.c_str()])
     {
       case Android_armeabi:
       case Android_armeabi_v7a:
       case Android_arm64_v8a:
-        adbInstall = adbExecCommand(device, "install -r --abi armeabi-v7a " + serverApk); break;
+        adbInstall = adbExecCommand(deviceID, "install -r --abi armeabi-v7a " + serverApk); break;
       case Android_x86:
       case Android_x86_64:
-        adbInstall = adbExecCommand(device, "install -r --abi x86 " + serverApk); break;
+        adbInstall = adbExecCommand(deviceID, "install -r --abi x86 " + serverApk); break;
       case Android_mips:
       case Android_mips64:
-        adbInstall = adbExecCommand(device, "install -r --abi mips" + serverApk); break;
+        adbInstall = adbExecCommand(deviceID, "install -r --abi mips" + serverApk); break;
       default:
         RDCERR("Unsupported target ABI: %s", adbAbi.c_str()); break;
     }
 
     // Ensure installation succeeded
-    string adbCheck = adbExecCommand(device, "shell pm list packages org.renderdoc.renderdoccmd");
+    string adbCheck = adbExecCommand(deviceID, "shell pm list packages org.renderdoc.renderdoccmd");
     if(adbCheck.empty())
     {
       RDCERR("Installation of RenderDocCmd.apk failed!");
