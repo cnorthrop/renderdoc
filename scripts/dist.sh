@@ -61,7 +61,7 @@ if [ -f bin-android32/RenderDocCmd.apk ]; then
 	mkdir -p dist/Release64/android/apk/32 dist/Release64/android/libs/armeabi-v7a
 
 	cp bin-android32/RenderDocCmd.apk dist/Release64/android/apk/32
-	cp bin-android32/librenderdoc.so dist/Release64/android/libs/armeabi-v7a/libVkLayer_RenderDoc.so
+	cp bin-android32/librenderdoc.so dist/Release64/android/libs/armeabi-v7a/libVkLayer_GLES_RenderDoc.so
 fi
 
 if [ -f bin-android64/RenderDocCmd.apk ]; then
@@ -69,7 +69,7 @@ if [ -f bin-android64/RenderDocCmd.apk ]; then
 	mkdir -p dist/Release64/android/apk/64 dist/Release64/android/libs/arm64-v8a
 
 	cp bin-android64/RenderDocCmd.apk dist/Release64/android/apk/64
-	cp bin-android64/librenderdoc.so dist/Release64/android/libs/arm64-v8a/libVkLayer_RenderDoc.so
+	cp bin-android64/librenderdoc.so dist/Release64/android/libs/arm64-v8a/libVkLayer_GLES_RenderDoc.so
 fi
 
 # try to copy adb.exe in as well, with its dll dependencies
