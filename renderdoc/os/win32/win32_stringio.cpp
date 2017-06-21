@@ -166,6 +166,11 @@ void GetExecutableFilename(string &selfName)
   selfName = StringFormat::Wide2UTF8(wstring(curFile));
 }
 
+bool IsRelativePath(const string& path)
+{
+  return PathIsRelativeA(path.c_str());
+}
+
 string GetFullPathname(const string &filename)
 {
   wstring wfn = StringFormat::UTF82Wide(filename);

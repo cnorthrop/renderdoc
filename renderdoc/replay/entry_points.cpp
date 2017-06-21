@@ -742,6 +742,14 @@ extern "C" RENDERDOC_API void RENDERDOC_CC RENDERDOC_EnumerateAndroidDevices(rdc
   *deviceList = ret;
 }
 
+bool endsWith(const string& value, const string& ending)
+{
+  if(ending.length() > value.length())
+    return false;
+
+  return (0 == value.compare(value.length() - ending.length(), ending.length(), ending));
+
+}
 extern "C" RENDERDOC_API void RENDERDOC_CC RENDERDOC_StartAndroidRemoteServer(const char *device)
 {
   int index = 0;
@@ -760,29 +768,50 @@ extern "C" RENDERDOC_API void RENDERDOC_CC RENDERDOC_StartAndroidRemoteServer(co
     string targetApk = "RenderDocCmd.apk";
     string serverApk;
 
-    // Check known paths for RenderDoc server, relative to exe
+    // Check known paths for RenderDoc server
     string exePath;
     FileIO::GetExecutableFilename(exePath);
     string exeDir = dirname(FileIO::GetFullPathname(exePath));
 
     std::vector<std::string> paths;
-    paths.push_back(exeDir + "/android/apk/" + targetApk);                     // Windows
-    paths.push_back(exeDir + "/../share/renderdoc/android/apk/" + targetApk);  // Linux
+
+#if defined(RENDERDOC_APK_PATH)
+    string customPath(RENDERDOC_APK_PATH);
+    RDCLOG("Custom APK path: %s", customPath.c_str());
+
+    if(FileIO::IsRelativePath(customPath))
+      customPath = exeDir + "/" +  customPath;
+
+    // Check to see if APK name was included in custom path
+    if(!endsWith(customPath, targetApk))
+    {
+      if(customPath.back() != '/')
+        customPath += "/";
+      customPath += targetApk;
+    }
+
+    paths.push_back(customPath);
+#endif
+
+    paths.push_back(exeDir + "/android/apk/" + targetApk);                     // Windows install
+    paths.push_back(exeDir + "/../share/renderdoc/android/apk/" + targetApk);  // Linux install
     paths.push_back(exeDir + "/../../build-android/bin/" + targetApk);         // Local build
 
     for(auto& entry : paths)
     {
+      RDCLOG("Checking for server APK in %s", entry.c_str());
       if (FileIO::exists(entry.c_str()))
       {
         serverApk = entry;
-        RDCLOG("server APK found!: %s", serverApk.c_str());
+        RDCLOG("APK found!: %s", serverApk.c_str());
         break;
       }
     }
 
     if(serverApk.empty())
     {
-        RDCERR("%s missing! RenderDoc for Android will not work without it.", targetApk.c_str());
+      RDCERR("%s missing! RenderDoc for Android will not work without it.", targetApk.c_str());
+      return;
     }
 
     // Build a map so we can switch on the string that returns from adb calls
