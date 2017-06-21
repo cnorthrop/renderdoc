@@ -838,7 +838,10 @@ extern "C" RENDERDOC_API void RENDERDOC_CC RENDERDOC_StartAndroidRemoteServer(co
 
     // 32-bit server works for 32 and 64 bit apps, so install 32-bit that matches ABI of the target device
     string adbAbi = adbExecCommand(deviceID, "shell getprop ro.product.cpu.abi");
-    adbAbi.pop_back(); // remove newline
+
+    // Remove newlines
+    const char* newlines = "\n\r";
+    adbAbi.erase(adbAbi.find_last_not_of(newlines) + 1);
 
     string adbInstall;
     switch(abi_string_map[adbAbi.c_str()])

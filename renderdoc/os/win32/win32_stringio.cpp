@@ -24,6 +24,7 @@
  ******************************************************************************/
 
 #include <shlobj.h>
+#include <shlwapi.h>
 #include <stdio.h>
 #include <string.h>
 #include <tchar.h>
@@ -168,7 +169,7 @@ void GetExecutableFilename(string &selfName)
 
 bool IsRelativePath(const string& path)
 {
-  return PathIsRelativeA(path.c_str());
+  return PathIsRelativeA(path.c_str()) != 0;
 }
 
 string GetFullPathname(const string &filename)
