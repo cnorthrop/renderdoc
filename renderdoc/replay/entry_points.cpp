@@ -836,22 +836,21 @@ extern "C" RENDERDOC_API void RENDERDOC_CC RENDERDOC_StartAndroidRemoteServer(co
     abi_string_map["mips"]        = Android_mips;
     abi_string_map["mips64"]      = Android_mips64;
 
-    // The 32-bit server works for 32 and 64 bit apps, so simply install
-    // 32-bit that matches ABI of the target device
+    // 32-bit server works for 32 and 64 bit apps, so install 32-bit that matches ABI of the target device
     string adbAbi = adbExecCommand(deviceID, "shell getprop ro.product.cpu.abi");
+    adbAbi.pop_back(); // remove newline
+
     string adbInstall;
     switch(abi_string_map[adbAbi.c_str()])
     {
-      case Android_armeabi:
       case Android_armeabi_v7a:
       case Android_arm64_v8a:
         adbInstall = adbExecCommand(deviceID, "install -r --abi armeabi-v7a " + serverApk); break;
+      case Android_armeabi:
       case Android_x86:
       case Android_x86_64:
-        adbInstall = adbExecCommand(deviceID, "install -r --abi x86 " + serverApk); break;
       case Android_mips:
       case Android_mips64:
-        adbInstall = adbExecCommand(deviceID, "install -r --abi mips" + serverApk); break;
       default:
         RDCERR("Unsupported target ABI: %s", adbAbi.c_str()); break;
     }
