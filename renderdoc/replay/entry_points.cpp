@@ -793,9 +793,10 @@ extern "C" RENDERDOC_API void RENDERDOC_CC RENDERDOC_StartAndroidRemoteServer(co
     paths.push_back(customPath);
 #endif
 
-    paths.push_back(exeDir + "/android/apk/" + targetApk);                     // Windows install
-    paths.push_back(exeDir + "/../share/renderdoc/android/apk/" + targetApk);  // Linux install
-    paths.push_back(exeDir + "/../../build-android/bin/" + targetApk);         // Local build
+    paths.push_back(exeDir + "/android/apk/" + targetApk);                      // Windows install
+    paths.push_back(exeDir + "/../share/renderdoc/android/apk/" + targetApk);   // Linux install
+    paths.push_back(exeDir + "/../../build-android/bin/" + targetApk);          // Local build
+    paths.push_back(exeDir + "/../../../../../build-android/bin/" + targetApk); // Local build (macOS)
 
     for(auto& entry : paths)
     {
