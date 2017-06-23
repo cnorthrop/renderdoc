@@ -680,10 +680,10 @@ uint32_t StartAndroidPackageForCapture(const char *host, const char *package)
   return ret;
 }
 
-bool SearchForAndroidLayer(const string& location, const string& layerName)
+bool SearchForAndroidLayer(const string& deviceID, const string& location, const string& layerName)
 {
   RDCLOG("Checking for layers in: %s", location.c_str());
-  string findLayer = adbExecCommand("shell find " + location + " -name " + layerName).strStdout;
+  string findLayer = adbExecCommand(deviceID, "shell find " + location + " -name " + layerName).strStdout;
   if(!findLayer.empty())
   {
     RDCLOG("Found RenderDoc layer in %s", location.c_str());
