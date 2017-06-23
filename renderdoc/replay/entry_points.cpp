@@ -790,7 +790,11 @@ bool installRenderDocServer(const string &deviceID)
 
   if(serverApk.empty())
   {
-    RDCERR("%s missing! RenderDoc for Android will not work without it. Build your Android ABI in build-android in the root to have it automatically found and installed.", targetApk.c_str());
+    RDCERR(
+        "%s missing! RenderDoc for Android will not work without it. "
+        "Build your Android ABI in build-android in the root to have it "
+        "automatically found and installed.",
+        targetApk.c_str());
     return false;
   }
 
