@@ -59,6 +59,11 @@ string GetHomeFolderFilename()
   return homedir;
 }
 
+string GetTempFolderName()
+{
+  return string(GetTempRootPath()) + "/";
+}
+
 void CreateParentDirectory(const string &filename)
 {
   string fn = dirname(filename);
