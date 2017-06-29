@@ -702,7 +702,7 @@ bool RemoveAPKSignature(const string& apk)
     return false;
 
   // Walk through the output.  If it starts with META-INF, remove it.
-  std::stringstream contents(fileList);
+  std::istringstream contents(fileList);
   string line;
   string prefix("META-INF");
   while(std::getline(contents, line))
@@ -718,8 +718,8 @@ bool RemoveAPKSignature(const string& apk)
   // Ensure no hits on second pass through
   RDCLOG("Walk through file list again, ensure signature removed");
   fileList = execCommand("aapt list " + apk).strStdout;
-  contents = std::stringstream(fileList);
-  while (std::getline(contents, line))
+  std::istringstream recheck(fileList);
+  while (std::getline(recheck, line))
   {
     if (line.compare(0, prefix.size(), prefix) == 0)
     {
@@ -810,7 +810,7 @@ bool DebugSignAPK(const string& apk, const string& workDir)
   string list = execCommand("aapt list " + apk).strStdout;
 
   // Walk through the output.  If it starts with META-INF, we're good
-  std::stringstream contents(list);
+  std::istringstream contents(list);
   string line;
   string prefix("META-INF");
   while(std::getline(contents, line))
@@ -1029,7 +1029,7 @@ extern "C" RENDERDOC_API void RENDERDOC_CC RENDERDOC_EnumerateAndroidDevices(rdc
   int idx = 0;
 
   using namespace std;
-  istringstream stdoutStream(adbStdout);
+  std::istringstream stdoutStream(adbStdout);
   string ret;
   string line;
   while(getline(stdoutStream, line))
@@ -1229,10 +1229,10 @@ string DetermineInstalledABI(const string &deviceID, const string &packageName)
 
   string dump = adbExecCommand(deviceID, "shell pm dump " + packageName).strStdout;
   if (dump.empty())
-    return false;
+    RDCERR("Unable to pm dump %s", packageName.c_str());
 
   // Walk through the output and look for primaryCpuAbi
-  std::stringstream contents(dump);
+  std::istringstream contents(dump);
   string line;
   string prefix("primaryCpuAbi=");
   while (std::getline(contents, line))
@@ -1331,6 +1331,8 @@ extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_AddLayerToAndroidPackage(co
   // Find the layer on host
   string layerName("libVkLayer_GLES_RenderDoc.so");
   string layerPath = FindAndroidLayer(abi, layerName);
+  if(layerPath.empty())
+    return false;
 
   // Find the APK on the device
   string pkgPath = trim(adbExecCommand(deviceID, "shell pm path " + packageName).strStdout);
