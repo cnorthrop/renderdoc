@@ -699,21 +699,26 @@ bool RemoveAPKSignature(const string &apk)
     return false;
 
   // Walk through the output.  If it starts with META-INF, remove it.
+  uint32_t fileCount = 0;
+  uint32_t matchCount = 0;
   std::istringstream contents(fileList);
   string line;
   string prefix("META-INF");
   while(std::getline(contents, line))
   {
     line = trim(line);
+    fileCount++;
     if(line.compare(0, prefix.size(), prefix) == 0)
     {
-      RDCLOG("Match found, removing  %s", line.c_str());
+      RDCDEBUG("Match found, removing  %s", line.c_str());
       execCommand("aapt remove " + apk + " " + line);
+      matchCount++;
     }
   }
+  RDCLOG("%d files searched, %d removed", fileCount, matchCount);
 
   // Ensure no hits on second pass through
-  RDCLOG("Walk through file list again, ensure signature removed");
+  RDCDEBUG("Walk through file list again, ensure signature removed");
   fileList = execCommand("aapt list " + apk).strStdout;
   std::istringstream recheck(fileList);
   while(std::getline(recheck, line))
@@ -741,10 +746,10 @@ bool AddLayerToAPK(const string &apk, const string &layerPath, const string &lay
   Process::ProcessResult result = execCommand("aapt add " + apk + " " + local, tmpDir);
 
   if(result.strStdout.empty())
+  {
+    RDCERR("Failed to add layer to APK. STDERR: %s", result.strStderror.c_str());
     return false;
-
-  if(!result.strStderror.empty())
-    return false;
+  }
 
   return true;
 }
