@@ -584,10 +584,6 @@ Process::ProcessResult execCommand(const string &cmd, const string &workDir = ".
 
   Process::ProcessResult result;
   Process::LaunchProcess(exe.c_str(), workDir.c_str(), args.c_str(), &result);
-  if(result.strStdout.length())
-    RDCLOG("STDOUT:\n%s", result.strStdout.c_str());
-  if(result.strStderror.length())
-    RDCLOG("STDERR:\n%s", result.strStderror.c_str());
   return result;
 }
 Process::ProcessResult adbExecCommand(const string &device, const string &args)
