@@ -50,7 +50,7 @@ static const string GetAbsoluteAppPathFromName(const string &appName)
     string appDir = dirname(appName);
     string appBasename = basename(appName);
     realpath(appDir.c_str(), realpathBuffer);
-    appPath.assign(realpathBuffer, strlen(realpathBuffer));
+    appPath = realpathBuffer;
     appPath += "/" + appBasename;
     return appPath;
   }
@@ -73,7 +73,7 @@ static const string GetAbsoluteAppPathFromName(const string &appName)
     testPath += "/" + appName;
     if(!access(testPath.c_str(), X_OK))
     {
-      appPath.assign(testPath);
+      appPath = testPath;
       break;
     }
     path = strtok(NULL, pathSeparator);
