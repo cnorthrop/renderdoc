@@ -768,8 +768,7 @@ bool RealignAPK(const string &apk, string &alignedAPK, const string &tmpDir)
   uint32_t timeout = 10000;    // 10 seconds
   while(elapsed < timeout)
   {
-    std::ifstream infile(alignedAPK.c_str());
-    if(infile.good())
+    if(FileIO::exists(alignedAPK.c_str()))
     {
       RDCLOG("Aligned APK ready to go, continuing...");
       return true;
@@ -940,8 +939,7 @@ bool PullAPK(const string &deviceID, const string &pkgPath, const string &apk)
   uint32_t timeout = 10000;    // 10 seconds
   while(elapsed < timeout)
   {
-    std::ifstream infile(apk.c_str());
-    if(infile.good())
+    if(FileIO::exists(apk.c_str()))
     {
       RDCLOG("Original APK ready to go, continuing...");
       return true;
