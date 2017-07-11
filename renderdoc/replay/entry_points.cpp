@@ -1292,12 +1292,15 @@ string FindAndroidLayer(const string &abi, const string &layerName)
   paths.push_back(customPath);
 #endif
 
-  // clang-format off
-  paths.push_back(exeDir + "/android/libs/" + abi + "/" + layerName);                                   // Windows install
-  paths.push_back(exeDir + "/../share/renderdoc/android/libs/" + abi + "/" + layerName);                // Linux install
-  paths.push_back(exeDir + "/../../build-android/renderdoccmd/libs/" + abi + "/" + layerName);          // Local build
-  paths.push_back(exeDir + "/../../../../../build-android/renderdoccmd/libs/" + abi + "/" + layerName); // macOS build
-  // clang-format on
+  string windows = "/android/libs/";
+  string linux = "/../share/renderdoc/android/libs/";
+  string local = "/../../build-android/renderdoccmd/libs/";
+  string macOS = "/../../../../../build-android/renderdoccmd/libs/";
+
+  paths.push_back(exeDir + windows + abi + "/" + layerName);
+  paths.push_back(exeDir + linux + abi + "/" + layerName);
+  paths.push_back(exeDir + local + abi + "/" + layerName);
+  paths.push_back(exeDir + macOS + abi + "/" + layerName);
 
   for(uint32_t i = 0; i < paths.size(); i++)
   {
