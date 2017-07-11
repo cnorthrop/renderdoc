@@ -459,7 +459,7 @@ void CaptureDialog::androidLayerWarn_mouseClick()
     // call into APK pull, patch, install routine, then continue
     LambdaThread *patch = new LambdaThread([this, exe, &patchSucceeded, &progress]() {
       QByteArray hostnameBytes = m_Ctx.Replay().CurrentRemote()->Hostname.toUtf8();
-      if(RENDERDOC_AddLayerToAndroidPackage(hostnameBytes.data(), exe.toStdString().c_str(),
+      if(RENDERDOC_AddLayerToAndroidPackage(hostnameBytes.data(), exe.toUtf8().data(),
                                             &progress))
       {
         // Sucess!
@@ -540,7 +540,7 @@ void CaptureDialog::on_exePathBrowse_clicked()
     {
       QByteArray hostnameBytes = m_Ctx.Replay().CurrentRemote()->Hostname.toUtf8();
       ui->androidLayerWarn->setVisible(
-          !RENDERDOC_CheckAndroidLayer(hostnameBytes.data(), filename.toStdString().c_str()));
+          !RENDERDOC_CheckAndroidLayer(hostnameBytes.data(), filename.toUtf8().data()));
     }
   }
 }
