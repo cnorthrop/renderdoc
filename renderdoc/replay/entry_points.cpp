@@ -1292,8 +1292,8 @@ string FindAndroidLayer(const string &abi, const string &layerName)
   paths.push_back(customPath);
 #endif
 
-  string windows = "/android/libs/";
-  string linux = "/../share/renderdoc/android/libs/";
+  string windows = "/android/lib/";
+  string linux = "/../share/renderdoc/android/lib/";
   string local = "/../../build-android/renderdoccmd/libs/";
   string macOS = "/../../../../../build-android/renderdoccmd/libs/";
 
