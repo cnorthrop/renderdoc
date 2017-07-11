@@ -439,14 +439,15 @@ void CaptureDialog::androidLayerWarn_mouseClick()
          "<a href='http://github.com/baldurk/renderdoc/wiki/Android-Support'>"
          "RenderDoc Wiki</a><br><br>"
          "If you are only targeting Vulkan, RenderDoc can try to add the layer for you, "
-         "which requires pulling the APK, patching it, and reinstalling with a debug key. "
+         "which requires pulling the APK, patching it, uninstalling the original, and "
+         "installing the modified version with a debug key. "
          "This works for many debuggable applications, but not all, especially those that "
          "check their integrity before launching.<br><br>"
-         "Your system will need Android Studio with several subcomponents installed for "
-         "this to work. Any missing tools will be noted in the log. Follow the steps "
+         "Your system will need several tools installed and available to RenderDoc. "
+         "Any missing tools will be noted in the log. Follow the steps "
          "<a href='http://github.com/baldurk/renderdoc/wiki/Android-Support'>here (TODO)"
          "</a> to get them.<br><br>"
-         "Would you like RenderDoc to try patching your APK and reinstalling it?");
+         "Would you like RenderDoc to try patching your APK?");
 
   QMessageBox::StandardButton prompt = RDDialog::question(this, caption, msg);
 
