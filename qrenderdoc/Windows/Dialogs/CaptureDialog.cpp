@@ -536,7 +536,7 @@ void CaptureDialog::on_exePathBrowse_clicked()
     SetExecutableFilename(filename);
 
     if(m_Ctx.Replay().CurrentRemote() &&
-       m_Ctx.Replay().CurrentRemote()->Hostname.startsWith(lit("adb:")))
+       m_Ctx.Replay().CurrentRemote()->IsHostADB())
     {
       QByteArray hostnameBytes = m_Ctx.Replay().CurrentRemote()->Hostname.toUtf8();
       ui->androidLayerWarn->setVisible(
