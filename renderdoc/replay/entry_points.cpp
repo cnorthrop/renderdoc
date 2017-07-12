@@ -1202,8 +1202,8 @@ extern "C" RENDERDOC_API void RENDERDOC_CC RENDERDOC_StartAndroidRemoteServer(co
       "shell am start -n org.renderdoc.renderdoccmd/.Loader -e renderdoccmd remoteserver");
 }
 
-extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_CheckAndroidLayer(const char *host,
-                                                                       const char *exe)
+extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_CheckAndroidPackage(const char *host,
+                                                                         const char *exe)
 {
   string packageName(basename(string(exe)));
 

@@ -540,7 +540,7 @@ void CaptureDialog::on_exePathBrowse_clicked()
     {
       QByteArray hostnameBytes = m_Ctx.Replay().CurrentRemote()->Hostname.toUtf8();
       ui->androidLayerWarn->setVisible(
-          !RENDERDOC_CheckAndroidLayer(hostnameBytes.data(), filename.toUtf8().data()));
+          !RENDERDOC_CheckAndroidPackage(hostnameBytes.data(), filename.toUtf8().data()));
     }
   }
 }
