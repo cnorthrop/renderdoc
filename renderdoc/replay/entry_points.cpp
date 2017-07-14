@@ -953,27 +953,38 @@ bool PullAPK(const string &deviceID, const string &pkgPath, const string &apk)
   return false;
 }
 
-bool CheckPermissions(const string &apk)
+bool CheckPermissions(const string &dump)
 {
-  RDCLOG("Checking that APK can be can write to sdcard");
-
-  string badging = execCommand("aapt dump badging " + apk).strStdout;
-
-  if(badging.find("android.permission.WRITE_EXTERNAL_STORAGE") == string::npos)
+  if(dump.find("android.permission.WRITE_EXTERNAL_STORAGE") == string::npos)
   {
-    RDCERR("APK missing WRITE_EXTERNAL_STORAGE permission");
+    RDCWARN("APK missing WRITE_EXTERNAL_STORAGE permission");
     return false;
   }
 
-  if(badging.find("android.permission.INTERNET") == string::npos)
+  if(dump.find("android.permission.INTERNET") == string::npos)
   {
-    RDCERR("APK missing INTERNET permission");
+    RDCWARN("APK missing INTERNET permission");
     return false;
   }
 
   return true;
 }
 
+bool CheckAPKPermissions(const string &apk)
+{
+  RDCLOG("Checking that APK can be can write to sdcard");
+  
+  string badging = execCommand("aapt dump badging " + apk).strStdout;
+
+  if (badging.empty())
+  {
+    RDCERR("Unable to aapt dump %s", apk.c_str());
+    return false;
+  }
+
+  return CheckPermissions(badging);
+
+}
 bool CheckDebuggable(const string &apk)
 {
   RDCLOG("Checking that APK s debuggable");
@@ -1202,8 +1213,20 @@ extern "C" RENDERDOC_API void RENDERDOC_CC RENDERDOC_StartAndroidRemoteServer(co
       "shell am start -n org.renderdoc.renderdoccmd/.Loader -e renderdoccmd remoteserver");
 }
 
-extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_CheckAndroidPackage(const char *host,
-                                                                         const char *exe)
+bool CheckInstalledPermissions(const string &deviceID, const string &packageName)
+{
+  RDCLOG("Checking installed permissions for %s", packageName.c_str());
+
+  string dump = adbExecCommand(deviceID, "shell pm dump " + packageName).strStdout;
+  if (dump.empty())
+    RDCERR("Unable to pm dump %s", packageName.c_str());
+
+  return CheckPermissions(dump);
+}
+
+extern "C" RENDERDOC_API void RENDERDOC_CC RENDERDOC_CheckAndroidPackage(const char *host,
+                                                                         const char *exe,
+                                                                         AndroidFlags *flags)
 {
   string packageName(basename(string(exe)));
 
@@ -1219,18 +1242,35 @@ extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_CheckAndroidPackage(const c
 
   string layerName = "libVkLayer_GLES_RenderDoc.so";
 
+  // Reset the flags each time we check
+  *flags = AndroidFlags::NoFlags;
+
+  bool found = false;
+
   // First, see if the application contains the layer
   if(SearchForAndroidLayer(deviceID, pkgPath, layerName))
-    return true;
+    found = true;
 
   // Next, check a debug location only usable by rooted devices
-  if(SearchForAndroidLayer(deviceID, "/data/local/debug/vulkan", layerName))
-    return true;
+  if(!found && SearchForAndroidLayer(deviceID, "/data/local/debug/vulkan", layerName))
+    found = true;
 
   // TODO: Add any future layer locations
 
-  RDCWARN("No RenderDoc layer for Vulkan was found");
-  return false;
+  if(!found)
+  {
+    RDCWARN("No RenderDoc layer for Vulkan or GLES was found");
+    *flags |= AndroidFlags::MissingLibrary;
+  }
+
+  // Next check permissions of the installed application (without pulling the APK)
+  if(!CheckInstalledPermissions(deviceID, packageName))
+  {
+    RDCWARN("Android application does not have required permissions");
+    *flags |= AndroidFlags::MissingPermissions;
+  }
+
+  return;
 }
 
 string DetermineInstalledABI(const string &deviceID, const string &packageName)
@@ -1368,7 +1408,7 @@ extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_AddLayerToAndroidPackage(co
 
   *progress = 0.31f;
 
-  if(!CheckPermissions(origAPK))
+  if(!CheckAPKPermissions(origAPK))
     return false;
 
   *progress = 0.41f;
