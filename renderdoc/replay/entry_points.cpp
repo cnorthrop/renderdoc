@@ -574,6 +574,14 @@ void extractDeviceIDAndIndex(const string &hostname, int &index, string &deviceI
 
   deviceID = c;
 }
+Process::ProcessResult execScript(const string &script, const string &args, const string &workDir = ".")
+{
+  RDCLOG("SCRIPT: %s", script.c_str());
+
+  Process::ProcessResult result;
+  Process::LaunchScript(script.c_str(), workDir.c_str(), args.c_str(), &result);
+  return result;
+}
 Process::ProcessResult execCommand(const string &cmd, const string &workDir = ".")
 {
   RDCLOG("COMMAND: %s", cmd.c_str());
@@ -792,27 +800,14 @@ bool DebugSignAPK(const string &apk, const string &workDir)
 {
   RDCLOG("Signing with debug key");
 
-// clang-format off
-#if ENABLED(RDOC_WIN32)
-  execCommand(
-      "cmd /C apksigner.bat sign "
-      "--ks " + debugKey + " "
-      "--ks-pass pass:android "
-      "--key-pass pass:android "
-      "--ks-key-alias androiddebugkey " +
-      apk + "\\",
-      workDir);
-#else
-  execCommand(
-      "bash -lc \"apksigner sign "
-      "--ks " + debugKey + " "
-      "--ks-pass pass:android "
-      "--key-pass pass:android "
-      "--ks-key-alias androiddebugkey " +
-      apk + "\"",
-      workDir);
-#endif
-  // clang-format on
+  string args;
+  args += " sign ";
+  args += " --ks " + debugKey + " ";
+  args += " --ks-pass pass:android ";
+  args += " --key-pass pass:android ";
+  args += " --ks-key-alias androiddebugkey ";
+  args += apk;
+  execScript("apksigner", args.c_str(), workDir.c_str());
 
   // Check for signature
   string list = execCommand("aapt list " + apk).strStdout;
