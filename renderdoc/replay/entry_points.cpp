@@ -790,15 +790,36 @@ bool RealignAPK(const string &apk, string &alignedAPK, const string &tmpDir)
   return false;
 }
 
-#if ENABLED(RDOC_WIN32)
-static string debugKey("%USERPROFILE%\\.android\\debug.keystore");
-#else
-static string debugKey("~/.android/debug.keystore");
-#endif
+string GetAndroidDebugKey()
+{
+  string key = FileIO::GetTempFolderFilename() + "debug.keystore";
 
+  if (FileIO::exists(key.c_str()))
+    return key;
+
+  string create = "keytool";
+  create += " -genkey";
+  create += " -keystore " + key;
+  create += " -storepass android";
+  create += " -alias androiddebugkey";
+  create += " -keypass android";
+  create += " -keyalg RSA";
+  create += " -keysize 2048";
+  create += " -validity 10000";
+  create += " -dname \"CN=, OU=, O=, L=, S=, C=\"";
+
+  Process::ProcessResult result = execCommand(create);
+
+  if (!result.strStderror.empty())
+    RDCERR("Failed to create debug key");
+
+  return key;
+}
 bool DebugSignAPK(const string &apk, const string &workDir)
 {
   RDCLOG("Signing with debug key");
+
+  string debugKey = GetAndroidDebugKey();
 
   string args;
   args += " sign ";
@@ -891,6 +912,7 @@ bool CheckPatchingRequirements()
   vector<string> missingTools;
   requirements.push_back("aapt");
   requirements.push_back("zipalign");
+  requirements.push_back("keytool");
   requirements.push_back("apksigner");
   requirements.push_back("java");
 #if ENABLED(RDOC_WIN32)
@@ -900,17 +922,12 @@ bool CheckPatchingRequirements()
       missingTools.push_back(requirements[i]);
   }
 
-  if(execCommand("cmd /C IF EXIST " + debugKey + " ECHO debug key foud").strStdout.empty())
-    missingTools.push_back(debugKey);
 #else
   for(uint32_t i = 0; i < requirements.size(); i++)
   {
     if(execCommand("which " + requirements[i]).strStdout.empty())
       missingTools.push_back(requirements[i]);
   }
-
-  if(execCommand("bash -lc \"stat " + debugKey + "\"").strStdout.empty())
-    missingTools.push_back(debugKey);
 #endif
 
   if(missingTools.size() > 0)
