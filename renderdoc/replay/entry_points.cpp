@@ -1326,14 +1326,16 @@ string FindAndroidLayer(const string &abi, const string &layerName)
   if(FileIO::IsRelativePath(customPath))
     customPath = exeDir + "/" + customPath;
 
-  // Check to see if layer name was included in custom path
-  if(!endswith(customPath, layerName))
+  if(!endswith(customPath, "/"))
+    customPath += "/";
+
+  // Custom path must point to directory containing ABI folders
+  customPath += abi;
+  if(!FileIO::exists(customPath.c_str()))
   {
-    if(customPath.back() != '/')
-      customPath += "/";
-    customPath += layerName;
+    RDCWARN("Custom layer path does not contain required ABI");
   }
-  paths.push_back(customPath);
+  paths.push_back(customPath + "/" + layerName);
 #endif
 
   string windows = "/android/lib/";
