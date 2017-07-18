@@ -745,13 +745,10 @@ bool AddLayerToAPK(const string &apk, const string &layerPath, const string &lay
 {
   RDCLOG("Adding RenderDoc layer");
 
-  // Create the required directory layout
-  string local("lib/" + abi + "/" + layerName);
-  string global(tmpDir + local);
-  FileIO::CreateParentDirectory(global);
-  FileIO::Copy(layerPath.c_str(), global.c_str(), true);
-
-  Process::ProcessResult result = execCommand("aapt add " + apk + " " + local, tmpDir);
+  // Run aapt from the directory containing "lib" so the relative paths are good
+  string workDir = removeFromEnd(layerPath, "lib/" + abi + "/" + layerName);
+  string layer("lib/" + abi + "/" + layerName);
+  Process::ProcessResult result = execCommand("aapt add " + apk + " " + layer, workDir);
 
   if(result.strStdout.empty())
   {
@@ -1340,8 +1337,8 @@ string FindAndroidLayer(const string &abi, const string &layerName)
 
   string windows = "/android/lib/";
   string linux = "/../share/renderdoc/android/lib/";
-  string local = "/../../build-android/renderdoccmd/libs/";
-  string macOS = "/../../../../../build-android/renderdoccmd/libs/";
+  string local = "/../../build-android/renderdoccmd/libs/lib/";
+  string macOS = "/../../../../../build-android/renderdoccmd/libs/lib/";
 
   paths.push_back(exeDir + windows + abi + "/" + layerName);
   paths.push_back(exeDir + linux + abi + "/" + layerName);
