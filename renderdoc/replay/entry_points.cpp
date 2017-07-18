@@ -915,20 +915,12 @@ bool CheckPatchingRequirements()
   requirements.push_back("keytool");
   requirements.push_back("apksigner");
   requirements.push_back("java");
-#if ENABLED(RDOC_WIN32)
-  for(uint32_t i = 0; i < requirements.size(); i++)
-  {
-    if(execCommand("cmd /C where " + requirements[i] + " 2>nul").strStdout.empty())
-      missingTools.push_back(requirements[i]);
-  }
 
-#else
   for(uint32_t i = 0; i < requirements.size(); i++)
   {
-    if(execCommand("which " + requirements[i]).strStdout.empty())
+    if(FileIO::FindFileInPath(requirements[i]).empty())
       missingTools.push_back(requirements[i]);
   }
-#endif
 
   if(missingTools.size() > 0)
   {
