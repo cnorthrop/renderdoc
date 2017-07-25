@@ -67,13 +67,15 @@ if(ANDROID)
                        DEPENDS renderdoccmd
                        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
                        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/android ${CMAKE_CURRENT_BINARY_DIR}
-                       COMMAND ${CMAKE_COMMAND} -E make_directory libs/${ANDROID_ABI}
-                       COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:renderdoc> libs/${ANDROID_ABI}/libVkLayer_GLES_RenderDoc.so
-                       COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:renderdoccmd> libs/${ANDROID_ABI}/$<TARGET_FILE_NAME:renderdoccmd>
-                       COMMAND android update project --path . --name RenderDocCmd --target ${APK_TARGET_ID}
-                       COMMAND ant debug
-                       COMMAND ${CMAKE_COMMAND} -E copy bin/RenderDocCmd-debug.apk ${APK_FILE}
-                       COMMAND ${CMAKE_COMMAND} -E make_directory libs/lib
-                       COMMAND ${CMAKE_COMMAND} -E copy_directory libs/${ANDROID_ABI} libs/lib/${ANDROID_ABI}
-                       COMMAND ${CMAKE_COMMAND} -E remove_directory libs/${ANDROID_ABI})
+                       COMMAND ${CMAKE_COMMAND} -E make_directory libs/lib/${ANDROID_ABI} obj bin
+                       COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:renderdoc> libs/lib/${ANDROID_ABI}/libVkLayer_GLES_RenderDoc.so
+                       COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:renderdoccmd> libs/lib/${ANDROID_ABI}/$<TARGET_FILE_NAME:renderdoccmd>
+                       COMMAND aapt package -v -f -m -S res -J src -M AndroidManifest.xml -I $ENV{ANDROID_SDK}/platforms/android-23/android.jar
+                       COMMAND javac -verbose -d ${CMAKE_CURRENT_BINARY_DIR}/obj -source 1.7 -target 1.7 -classpath $ENV{ANDROID_SDK}/platforms/android-23/android.jar:obj -sourcepath src src/org/renderdoc/renderdoccmd/*.java
+                       COMMAND dx --dex --verbose --output=bin/classes.dex ${CMAKE_CURRENT_BINARY_DIR}/obj
+                       COMMAND aapt package -v -f -M AndroidManifest.xml -S res -I $ENV{ANDROID_SDK}/platforms/android-23/android.jar -F bin/RenderDocCmd-unaligned.apk bin libs
+                       COMMAND zipalign -v -f 4 bin/RenderDocCmd-unaligned.apk bin/RenderDocCmd.apk
+                       COMMAND keytool -genkey -keystore ${CMAKE_CURRENT_BINARY_DIR}/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=, OU=, O=, L=, S=, C="
+                       COMMAND apksigner sign --ks ${CMAKE_CURRENT_BINARY_DIR}/debug.keystore --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey bin/RenderDocCmd.apk 
+                       COMMAND ${CMAKE_COMMAND} -E copy bin/RenderDocCmd.apk ${APK_FILE})
 endif()
