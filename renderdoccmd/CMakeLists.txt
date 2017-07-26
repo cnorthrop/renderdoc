@@ -58,18 +58,33 @@ install (TARGETS renderdoccmd DESTINATION bin)
 
 if(ANDROID)
     set(APK_TARGET_ID "android-23" CACHE STRING "The Target ID to build the APK for, use <android list targets> to choose another one.")
+    set(KEYSTORE ${CMAKE_CURRENT_BINARY_DIR}/debug.keystore)
+    add_custom_command(OUTPUT ${KEYSTORE}
+                       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+                       COMMAND keytool -genkey -keystore ${KEYSTORE} -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=, OU=, O=, L=, S=, C=")
 
     set(APK_FILE ${CMAKE_BINARY_DIR}/bin/RenderDocCmd.apk)
     add_custom_target(apk ALL
-                      DEPENDS ${APK_FILE})
+                      DEPENDS ${APK_FILE}
+                      DEPENDS ${KEYSTORE})
+
+    set(JARFILE "$ENV{ANDROID_SDK}/platforms/android-23/android.jar")
     add_custom_command(OUTPUT ${APK_FILE}
                        DEPENDS renderdoc
                        DEPENDS renderdoccmd
                        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
                        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/android ${CMAKE_CURRENT_BINARY_DIR}
-                       COMMAND ${CMAKE_COMMAND} -E make_directory libs/lib/${ANDROID_ABI} obj bin
+                       COMMAND ${CMAKE_COMMAND} -E make_directory libs/lib/${ANDROID_ABI}
+                       COMMAND ${CMAKE_COMMAND} -E make_directory obj
+                       COMMAND ${CMAKE_COMMAND} -E make_directory bin
                        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:renderdoc> libs/lib/${ANDROID_ABI}/libVkLayer_GLES_RenderDoc.so
                        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:renderdoccmd> libs/lib/${ANDROID_ABI}/$<TARGET_FILE_NAME:renderdoccmd>
-                       COMMAND ${CMAKE_SOURCE_DIR}/scripts/package_APK.sh ${CMAKE_CURRENT_BINARY_DIR}
+                       COMMAND aapt package -f -m -S res -J src -M AndroidManifest.xml -I ${JARFILE}
+                       COMMAND javac -d ./obj -source 1.7 -target 1.7 -bootclasspath $ENV{JAVA_HOME}/jre/lib/rt.jar -classpath ${JARFILE}:obj -sourcepath src src/org/renderdoc/renderdoccmd/*.java
+                       COMMAND dx --dex --output=bin/classes.dex ./obj
+                       COMMAND aapt package -f -M AndroidManifest.xml -S res -I ${JARFILE} -F bin/RenderDocCmd-unaligned.apk bin libs
+                       COMMAND zipalign -f 4 bin/RenderDocCmd-unaligned.apk bin/RenderDocCmd.apk
+                       COMMAND apksigner sign --ks ${KEYSTORE} --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey bin/RenderDocCmd.apk 
                        COMMAND ${CMAKE_COMMAND} -E copy bin/RenderDocCmd.apk ${APK_FILE})
+
 endif()
