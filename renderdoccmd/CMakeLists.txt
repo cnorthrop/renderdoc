@@ -57,6 +57,13 @@ target_link_libraries(renderdoccmd ${libraries})
 install (TARGETS renderdoccmd DESTINATION bin)
 
 if(ANDROID)
+    if(NOT DEFINED ENV{JAVA_HOME})
+        message(FATAL_ERROR "JAVA_HOME environment variable must be defined for Android build")
+    endif()
+    if(NOT DEFINED ENV{ANDROID_SDK})
+        message(FATAL_ERROR "ANDROID_SDK environment variable must be defined for Android build")
+    endif()
+
     set(APK_TARGET_ID "android-23" CACHE STRING "The Target ID to build the APK for, use <android list targets> to choose another one.")
     set(KEYSTORE ${CMAKE_CURRENT_BINARY_DIR}/debug.keystore)
     add_custom_command(OUTPUT ${KEYSTORE}
