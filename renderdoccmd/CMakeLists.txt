@@ -70,12 +70,6 @@ if(ANDROID)
                        COMMAND ${CMAKE_COMMAND} -E make_directory libs/lib/${ANDROID_ABI} obj bin
                        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:renderdoc> libs/lib/${ANDROID_ABI}/libVkLayer_GLES_RenderDoc.so
                        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:renderdoccmd> libs/lib/${ANDROID_ABI}/$<TARGET_FILE_NAME:renderdoccmd>
-                       COMMAND aapt package -v -f -m -S res -J src -M AndroidManifest.xml -I $ENV{ANDROID_SDK}/platforms/android-23/android.jar
-                       COMMAND javac -verbose -d ${CMAKE_CURRENT_BINARY_DIR}/obj -source 1.7 -target 1.7 -classpath $ENV{ANDROID_SDK}/platforms/android-23/android.jar:obj -sourcepath src src/org/renderdoc/renderdoccmd/*.java
-                       COMMAND dx --dex --verbose --output=bin/classes.dex ${CMAKE_CURRENT_BINARY_DIR}/obj
-                       COMMAND aapt package -v -f -M AndroidManifest.xml -S res -I $ENV{ANDROID_SDK}/platforms/android-23/android.jar -F bin/RenderDocCmd-unaligned.apk bin libs
-                       COMMAND zipalign -v -f 4 bin/RenderDocCmd-unaligned.apk bin/RenderDocCmd.apk
-                       COMMAND keytool -genkey -keystore ${CMAKE_CURRENT_BINARY_DIR}/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=, OU=, O=, L=, S=, C="
-                       COMMAND apksigner sign --ks ${CMAKE_CURRENT_BINARY_DIR}/debug.keystore --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey bin/RenderDocCmd.apk 
+                       COMMAND ${CMAKE_SOURCE_DIR}/scripts/package_APK.sh ${CMAKE_CURRENT_BINARY_DIR}
                        COMMAND ${CMAKE_COMMAND} -E copy bin/RenderDocCmd.apk ${APK_FILE})
 endif()
