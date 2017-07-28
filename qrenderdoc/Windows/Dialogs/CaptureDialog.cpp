@@ -466,36 +466,96 @@ void CaptureDialog::androidWarn_mouseClick()
 
   bool missingPermissions = bool(m_AndroidFlags & AndroidFlags::MissingPermissions);
   bool missingLibrary = bool(m_AndroidFlags & AndroidFlags::MissingLibrary);
+  bool rootAccess = bool(m_AndroidFlags & AndroidFlags::RootAccess);
 
-  if(missingPermissions)
+  if (missingPermissions)
   {
     msg +=
-        tr("<b>Missing permissions</b><br>"
-           "The target APK must have the following permissions:<br>"
-           "android.permission.WRITE_EXTERNAL_STORAGE<br>"
-           "android.permission.INTERNET<br><br>");
+      tr("<b>Missing permissions</b><br>"
+        "The target APK must have the following permissions:<br>"
+        "android.permission.WRITE_EXTERNAL_STORAGE<br>"
+        "android.permission.INTERNET<br><br>");
   }
 
-  if(missingLibrary)
+  if (missingLibrary)
   {
     msg +=
-        tr("<b>Missing library</b><br>"
-           "The RenderDoc library must be present in the "
-           "installed application.<br><br>"
-           "To fix this, you should repackage the APK following guidelines on the "
-           "<a href='http://github.com/baldurk/renderdoc/wiki/Android-Support'>"
-           "RenderDoc Wiki</a><br><br>");
+      tr("<b>Missing library</b><br>"
+        "The RenderDoc library must be present in the "
+        "installed application.<br><br>");
   }
 
-  if(missingPermissions)
+  if (missingPermissions)
   {
-    // Don't prompt for patching if anything other than library is missing
+    // Don't prompt for patching if permissions are wrong - we can't fix that
     RDDialog::critical(this, caption, msg);
+    return;
   }
-  else
+
+  bool triedPush = false;
+  bool suggestPatch = true;
+
+  if (rootAccess)
   {
+    QString rootmsg = msg;
+    rootmsg +=
+      tr("Your device appears to have <b>root access</b>. If you are only targeting Vulkan, "
+        "RenderDoc can try to push the layer directly to your application.<br><br>"
+        "Would you like RenderDoc to push the layer?");
+
+    QMessageBox::StandardButton prompt = RDDialog::question(this, caption, rootmsg, RDDialog::YesNoCancel);
+
+    if (prompt == QMessageBox::Yes)
+    {
+      triedPush = true;
+      bool pushSucceeded = false;
+
+      // call into layer push routine, then continue
+      LambdaThread *push = new LambdaThread([this, exe, &pushSucceeded]() {
+        QByteArray hostnameBytes = m_Ctx.Replay().CurrentRemote()->Hostname.toUtf8();
+        if (RENDERDOC_PushLayerToAndroidApp(hostnameBytes.data(), exe.toUtf8().data()))
+        {
+          // Sucess!
+          pushSucceeded = true;
+
+          RDDialog::information(
+            this, tr("Push succeeded!"),
+            tr("The push attempt succeeded and %1 now contains the RenderDoc layer").arg(exe));
+        }
+      });
+
+      push->start();
+      if (push->isRunning())
+      {
+        ShowProgressDialog(this, tr("Pushing layer to %1, please wait...").arg(exe),
+          [push]() { return !push->isRunning(); });
+      }
+      push->deleteLater();
+
+      if (pushSucceeded)
+      {
+        // We should be good from here, no futher prompts
+        suggestPatch = false;
+        ui->androidWarn->setVisible(false);
+      }
+    }
+    else if (prompt == QMessageBox::Cancel)
+    {
+      // Cancel skips any other fix prompts
+      suggestPatch = false;
+    }
+  }
+
+  if(suggestPatch)
+  {
+    if (triedPush)
+      msg.insert(0, tr("The push attempt failed, so other methods must be used to fix the missing layer.<br><br>"));
+
     msg +=
-        tr("If you are only targeting Vulkan, RenderDoc can try to add the layer for you, "
+        tr("To fix this, you should repackage the APK following guidelines on the "
+           "<a href='http://github.com/baldurk/renderdoc/wiki/Android-Support'>"
+           "RenderDoc Wiki</a><br><br>"
+           "If you are only targeting Vulkan, RenderDoc can try to <b>add the layer for you</b>, "
            "which requires pulling the APK, patching it, uninstalling the original, and "
            "installing the modified version with a debug key. "
            "This works for many debuggable applications, but not all, especially those that "
@@ -506,7 +566,7 @@ void CaptureDialog::androidWarn_mouseClick()
            "</a> to get them.<br><br>"
            "Would you like RenderDoc to try patching your APK?");
 
-    QMessageBox::StandardButton prompt = RDDialog::question(this, caption, msg);
+    QMessageBox::StandardButton prompt = RDDialog::question(this, caption, msg, RDDialog::YesNoCancel);
 
     if(prompt == QMessageBox::Yes)
     {

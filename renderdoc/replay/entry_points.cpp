@@ -1228,6 +1228,29 @@ bool CheckInstalledPermissions(const string &deviceID, const string &packageName
   return CheckPermissions(dump);
 }
 
+bool CheckRootAccess(const string &deviceID)
+{
+  RDCLOG("Checking for root access on %s", deviceID);
+
+  Process::ProcessResult result = {};
+
+  // Try switching adb to root and check a few indicators for success
+  // Nothing will fall over if we get a false positive here, it just enables
+  // additional methods of getting things set up.
+
+  result = adbExecCommand(deviceID, "root");
+
+  string whoami = trim(adbExecCommand(deviceID, "shell whoami").strStdout);
+  if(whoami == "root")
+    return true;
+
+  result = adbExecCommand(deviceID, "shell test -e /system/xbin/su && echo found");
+  if(trim(result.strStdout) == "found")
+    return true;
+
+  return false;
+}
+
 extern "C" RENDERDOC_API void RENDERDOC_CC RENDERDOC_CheckAndroidPackage(const char *host,
                                                                          const char *exe,
                                                                          AndroidFlags *flags)
@@ -1272,6 +1295,11 @@ extern "C" RENDERDOC_API void RENDERDOC_CC RENDERDOC_CheckAndroidPackage(const c
   {
     RDCWARN("Android application does not have required permissions");
     *flags |= AndroidFlags::MissingPermissions;
+  }
+
+  if (CheckRootAccess(deviceID))
+  {
+    *flags |= AndroidFlags::RootAccess;
   }
 
   return;
@@ -1369,6 +1397,31 @@ string FindAndroidLayer(const string &abi, const string &layerName)
   }
 
   return layer;
+}
+
+extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_PushLayerToAndroidApp(const char *host,
+                                                                           const char *exe)
+{
+  Process::ProcessResult result = {};
+  string packageName(basename(string(exe)));
+
+  int index = 0;
+  std::string deviceID;
+  Android::extractDeviceIDAndIndex(host, index, deviceID);
+
+  // Detect which ABI was installed on the device
+  string abi = DetermineInstalledABI(deviceID, packageName);
+
+  // Find the layer on host
+  string layerName("libVkLayer_GLES_RenderDoc.so");
+  string layerPath = FindAndroidLayer(abi, layerName);
+  if (layerPath.empty())
+    return false;
+
+  result = adbExecCommand(deviceID, "push " + layerPath + " /data/data/" + packageName + "/lib/");
+
+  // Ensure the push succeeded
+  return SearchForAndroidLayer(deviceID, "/data/data/" + packageName + "/lib/", layerName);
 }
 
 extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_AddLayerToAndroidPackage(const char *host,
