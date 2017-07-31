@@ -423,8 +423,8 @@ void CaptureDialog::vulkanLayerWarn_mouseClick()
 
 void CaptureDialog::CheckAndroidSetup(QString &filename)
 {
-  ui->androidWarn->setVisible(false);
   ui->androidScan->setVisible(true);
+  ui->androidWarn->setVisible(false);
 
   LambdaThread *scan = new LambdaThread([this, filename]() {
 
@@ -500,15 +500,24 @@ void CaptureDialog::androidWarn_mouseClick()
     QString rootmsg = msg;
     rootmsg +=
       tr("Your device appears to have <b>root access</b>. If you are only targeting Vulkan, "
-        "RenderDoc can try to push the layer directly to your application.<br><br>"
-        "Would you like RenderDoc to push the layer?");
+         "RenderDoc can try to push the layer directly to your application.<br><br>"
+         "Would you like RenderDoc to push the layer?<br>");
 
-    QMessageBox::StandardButton prompt = RDDialog::question(this, caption, rootmsg, RDDialog::YesNoCancel);
+    bool persist = false;
+    QString checkMsg(lit("Automatically do this on rooted devices"));
+    QCheckBox cb(checkMsg, this);
+    QMessageBox::StandardButton prompt =
+      RDDialog::questionChecked(this, caption, rootmsg, &cb, persist, RDDialog::YesNoCancel);
 
     if (prompt == QMessageBox::Yes)
     {
       triedPush = true;
       bool pushSucceeded = false;
+
+      if(persist)
+      {
+        // Do something to remember this and display it in the Android settings
+      }
 
       // call into layer push routine, then continue
       LambdaThread *push = new LambdaThread([this, exe, &pushSucceeded]() {
