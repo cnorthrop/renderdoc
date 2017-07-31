@@ -448,8 +448,8 @@ QMessageBox::StandardButton RDDialog::messageBoxChecked(QMessageBox::Icon icon, 
                                                         QMessageBox::StandardButtons buttons,
                                                         QMessageBox::StandardButton defaultButton)
 {
+  bool isChecked = checked;
   QMessageBox::StandardButton ret = defaultButton;
-  bool isChecked = false;
 
   // if we're already on the right thread, this boils down to a function call
   GUIInvoke::blockcall([&]() {
@@ -457,8 +457,8 @@ QMessageBox::StandardButton RDDialog::messageBoxChecked(QMessageBox::Icon icon, 
     mb.setDefaultButton(defaultButton);
     mb.setCheckBox(checkBox);
     show(&mb);
-    ret = mb.standardButton(mb.clickedButton());
     isChecked = mb.checkBox()->isChecked();
+    ret = mb.standardButton(mb.clickedButton());
   });
 
   checked = isChecked;

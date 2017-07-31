@@ -188,6 +188,8 @@ void PersistantConfig::AddAndroidHosts()
 
   SetConfigSetting(lit("MaxConnectTimeout"), QString::number(Android_MaxConnectTimeout));
 
+  SetConfigSetting(lit("Android_AutoPushLayerToApp"), Android_AutoPushLayerToApp ? lit("1") : lit("0"));
+
   rdctype::str androidHosts;
   RENDERDOC_EnumerateAndroidDevices(&androidHosts);
   for(const QString &hostName : ToQStr(androidHosts).split(QLatin1Char(','), QString::SkipEmptyParts))
@@ -235,6 +237,7 @@ bool PersistantConfig::Load(const QString &filename)
   }
 
   RENDERDOC_SetConfigSetting("Disassembly_FriendlyNaming", ShaderViewer_FriendlyNaming ? "1" : "0");
+  RENDERDOC_SetConfigSetting("Android_AutoPushLayerToApp", Android_AutoPushLayerToApp ? "1" : "0");
 
   // localhost should always be available as a remote host
   bool foundLocalhost = false;
@@ -268,6 +271,7 @@ bool PersistantConfig::Save()
     RemoteHostList.push_back(*host);
 
   RENDERDOC_SetConfigSetting("Disassembly_FriendlyNaming", ShaderViewer_FriendlyNaming ? "1" : "0");
+  RENDERDOC_SetConfigSetting("Android_AutoPushLayerToApp", Android_AutoPushLayerToApp ? "1" : "0");
 
   return Serialize(m_Filename);
 }
