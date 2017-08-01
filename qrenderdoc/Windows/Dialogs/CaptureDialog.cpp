@@ -503,12 +503,10 @@ void CaptureDialog::androidWarn_mouseClick()
          "RenderDoc can try to push the layer directly to your application.<br><br>"
          "Would you like RenderDoc to push the layer?<br>");
 
-    m_Ctx.Config().Load(lit("UI.config"));
-    QString autoPushLayerSetting = m_Ctx.Config().GetConfigSetting(lit("Android_AutoPushLayerToApp"));
-    bool persist = QString::compare(autoPushLayerSetting, lit("1"));
 
     QString checkMsg(lit("Automatically do this on rooted devices"));
     QCheckBox *cb = new QCheckBox(checkMsg, this);
+    bool persist = m_Ctx.Config().Android_AutoPushLayerToApp;
     cb->setChecked(persist);
     QMessageBox::StandardButton prompt =
       RDDialog::questionChecked(this, caption, rootmsg, cb, persist, RDDialog::YesNoCancel);
@@ -519,12 +517,11 @@ void CaptureDialog::androidWarn_mouseClick()
       bool pushSucceeded = false;
 
       // Just check for true, we won't draw the checkBox if previously set
-      if(persist)
-      {
-        m_Ctx.Config().SetConfigSetting(QString(lit("Android_AutoPushLayerToApp")),
-                                        persist ? QString(lit("1")) : QString(lit("0")));
+      //if(persist)
+      //{
+        m_Ctx.Config().Android_AutoPushLayerToApp = persist;
         m_Ctx.Config().Save();
-      }
+      //}
 
       // call into layer push routine, then continue
       LambdaThread *push = new LambdaThread([this, exe, &pushSucceeded]() {

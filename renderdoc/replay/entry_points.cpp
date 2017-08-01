@@ -1418,7 +1418,7 @@ extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_PushLayerToAndroidApp(const
   if (layerPath.empty())
     return false;
 
-  result = adbExecCommand(deviceID, "push " + layerPath + " /data/data/" + packageName + "/lib/");
+  //result = adbExecCommand(deviceID, "push " + layerPath + " /data/data/" + packageName + "/lib/");
 
   // Ensure the push succeeded
   return SearchForAndroidLayer(deviceID, "/data/data/" + packageName + "/lib/", layerName);
