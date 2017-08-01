@@ -497,33 +497,40 @@ void CaptureDialog::androidWarn_mouseClick()
 
   if (rootAccess)
   {
-    QString rootmsg = msg;
-    rootmsg +=
-      tr("Your device appears to have <b>root access</b>. If you are only targeting Vulkan, "
-         "RenderDoc can try to push the layer directly to your application.<br><br>"
-         "Would you like RenderDoc to push the layer?<br>");
+    // Check whether user has requested automatic pushing
+    bool autoPushLayer = m_Ctx.Config().Android_AutoPushLayerToApp;
+    bool autoPushRequested = autoPushLayer;
 
+    QMessageBox::StandardButton prompt = QMessageBox::No;
 
-    QString checkMsg(lit("Automatically do this on rooted devices"));
-    QCheckBox *cb = new QCheckBox(checkMsg, this);
-    bool persist = m_Ctx.Config().Android_AutoPushLayerToApp;
-    cb->setChecked(persist);
-    QMessageBox::StandardButton prompt =
-      RDDialog::questionChecked(this, caption, rootmsg, cb, persist, RDDialog::YesNoCancel);
-
-    if (prompt == QMessageBox::Yes)
+    // Skip the initial prompt if user has previously clicked Yes and checked the box
+    if (!autoPushLayer)
     {
-      triedPush = true;
+      QString rootmsg = msg;
+      rootmsg +=
+        tr("Your device appears to have <b>root access</b>. If you are only targeting Vulkan, "
+           "RenderDoc can try to push the layer directly to your application.<br><br>"
+           "Would you like RenderDoc to push the layer?<br>");
+
+      QString checkMsg(lit("Automatically push the layer on rooted devices"));
+      QCheckBox *cb = new QCheckBox(checkMsg, this);
+      cb->setChecked(autoPushRequested);
+      prompt = RDDialog::questionChecked(this, caption, rootmsg, cb, autoPushRequested, RDDialog::YesNoCancel);
+    }
+
+    if(autoPushLayer || prompt == QMessageBox::Yes)
+    {
       bool pushSucceeded = false;
+      triedPush = true;
 
-      // Just check for true, we won't draw the checkBox if previously set
-      //if(persist)
-      //{
-        m_Ctx.Config().Android_AutoPushLayerToApp = persist;
+      // Only update the autoPush setting if Yes was clicked
+      if (autoPushRequested != m_Ctx.Config().Android_AutoPushLayerToApp)
+      {
+        m_Ctx.Config().Android_AutoPushLayerToApp = autoPushRequested;
         m_Ctx.Config().Save();
-      //}
+      }
 
-      // call into layer push routine, then continue
+      // Call into layer push routine, then continue
       LambdaThread *push = new LambdaThread([this, exe, &pushSucceeded]() {
         QByteArray hostnameBytes = m_Ctx.Replay().CurrentRemote()->Hostname.toUtf8();
         if (RENDERDOC_PushLayerToAndroidApp(hostnameBytes.data(), exe.toUtf8().data()))
