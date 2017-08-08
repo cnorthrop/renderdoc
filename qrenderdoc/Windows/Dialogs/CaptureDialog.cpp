@@ -540,8 +540,9 @@ void CaptureDialog::androidWarn_mouseClick()
       patch->wait(500);
       if(patch->isRunning())
       {
-        ShowProgressDialog(this, tr("Patching %1, please wait...").arg(exe),
+        ShowProgressDialogWithCancel(this, tr("Patching %1, please wait...").arg(exe),
                            [patch]() { return !patch->isRunning(); },
+                           [patch]() { return patch->stop(); },
                            [&progress]() { return progress; });
       }
       patch->deleteLater();

@@ -36,6 +36,7 @@
 #include <QMetaMethod>
 #include <QProcess>
 #include <QProgressDialog>
+#include <QPushButton>
 #include <QStandardPaths>
 #include <QtMath>
 
@@ -1004,21 +1005,40 @@ QStringList ParseArgsList(const QString &args)
   return ret;
 }
 
+void ShowProgressDialogWithCancel(QWidget *window, const QString &labelText,
+                                  ProgressFinishedMethod finished,
+                                  CancelMethod cancel, ProgressUpdateMethod update)
+{
+  ShowProgressDialog(window, labelText, finished, update, cancel);
+}
+
 void ShowProgressDialog(QWidget *window, const QString &labelText, ProgressFinishedMethod finished,
-                        ProgressUpdateMethod update)
+                        ProgressUpdateMethod update, CancelMethod cancel)
 {
   RDProgressDialog dialog(labelText, window);
 
   // if we don't have an update function, set the progress display to be 'infinite spinner'
   dialog.setInfinite(!update);
 
+  if(cancel)
+  {
+    QPushButton *cancelButton = new QPushButton();
+    dialog.setCancelButton(cancelButton);
+    dialog.setCancelButtonText(lit("Cancel"));
+  }
   QSemaphore tickerSemaphore(1);
 
   // start a lambda thread to tick our functions and close the progress dialog when we're done.
-  LambdaThread progressTickerThread([finished, update, &dialog, &tickerSemaphore]() {
+  LambdaThread progressTickerThread([finished, update, cancel, &dialog, &tickerSemaphore]() {
     while(tickerSemaphore.available())
     {
       QThread::msleep(30);
+
+      if(cancel && dialog.wasCanceled())
+      {
+        GUIInvoke::call([cancel]() { cancel(); });
+        return;
+      }
 
       if(update)
         GUIInvoke::call([update, &dialog]() { dialog.setPercentage(update()); });

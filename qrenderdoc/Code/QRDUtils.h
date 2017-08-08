@@ -772,6 +772,8 @@ public:
   }
 
   void start(QThread::Priority prio = QThread::InheritPriority) { m_Thread->start(prio); }
+  void stop() { m_Thread->quit(); }
+
   bool isRunning() { return completed.available(); }
   bool wait(unsigned long time = ULONG_MAX)
   {
@@ -879,14 +881,22 @@ class QProgressDialog;
 
 typedef std::function<float()> ProgressUpdateMethod;
 typedef std::function<bool()> ProgressFinishedMethod;
+typedef std::function<void()> CancelMethod;
 
 QStringList ParseArgsList(const QString &args);
 bool IsRunningAsAdmin();
 bool RunProcessAsAdmin(const QString &fullExecutablePath, const QStringList &params,
                        std::function<void()> finishedCallback = std::function<void()>());
 
-void ShowProgressDialog(QWidget *window, const QString &labelText, ProgressFinishedMethod finished,
+void ShowProgressDialogWithCancel(QWidget *window, const QString &labelText,
+                        ProgressFinishedMethod finished,
+                        CancelMethod cancel,
                         ProgressUpdateMethod update = ProgressUpdateMethod());
+
+void ShowProgressDialog(QWidget *window, const QString &labelText, ProgressFinishedMethod finished,
+                        ProgressUpdateMethod update = ProgressUpdateMethod(),
+                        CancelMethod cancel = nullptr);
+
 
 void setEnabledMultiple(const QList<QWidget *> &widgets, bool enabled);
 

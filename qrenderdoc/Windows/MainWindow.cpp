@@ -329,8 +329,9 @@ void MainWindow::OnCaptureTrigger(const QString &exe, const QString &workingDir,
   th->wait(500);
   if(th->isRunning())
   {
-    ShowProgressDialog(this, tr("Launching %1, please wait...").arg(exe),
-                       [th]() { return !th->isRunning(); });
+    ShowProgressDialogWithCancel(this, tr("Launching %1, please wait...").arg(exe),
+                       [th]() { return !th->isRunning(); },
+                       [th]() { return th->stop(); });
   }
   th->deleteLater();
 }
