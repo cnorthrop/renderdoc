@@ -3,11 +3,6 @@ import android.app.Activity;
 
 public class Loader extends android.app.NativeActivity
 {
-    /* load our native library */
-    static {
-        System.loadLibrary("renderdoccmd"); // this will load VkLayer_GLES_RenderDoc as well
-    }
-
     @Override
     protected void onCreate(android.os.Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
