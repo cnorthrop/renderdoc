@@ -433,12 +433,6 @@ bool PullAPK(const string &deviceID, const string &pkgPath, const string &apk)
 
 bool CheckPermissions(const string &dump)
 {
-  if(dump.find("android.permission.WRITE_EXTERNAL_STORAGE") == string::npos)
-  {
-    RDCWARN("APK missing WRITE_EXTERNAL_STORAGE permission");
-    return false;
-  }
-
   if(dump.find("android.permission.INTERNET") == string::npos)
   {
     RDCWARN("APK missing INTERNET permission");
