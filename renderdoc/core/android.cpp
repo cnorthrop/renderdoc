@@ -24,9 +24,17 @@
 
 #include "android.h"
 #include <sstream>
+#include <chrono>
 #include "api/replay/version.h"
 #include "core/core.h"
 #include "serialise/string_utils.h"
+
+#if ENABLED(RDOC_ANDROID)
+
+extern "C" RENDERDOC_API const char RENDERDOC_Version_Tag_String[] =
+    "RenderDoc build version: " FULL_VERSION_STRING " from git commit " GIT_COMMIT_HASH;
+
+#endif
 
 namespace Android
 {
@@ -161,12 +169,11 @@ uint32_t StartAndroidPackageForCapture(const char *host, const char *package)
   return ret;
 }
 
-bool SearchForAndroidLayer(const string &deviceID, const string &location, const string &layerName)
+bool SearchForAndroidLayer(const string &deviceID, const string &location, const string &layerName, string &foundLayer)
 {
   RDCLOG("Checking for layers in: %s", location.c_str());
-  string findLayer =
-      adbExecCommand(deviceID, "shell find " + location + " -name " + layerName).strStdout;
-  if(!findLayer.empty())
+  foundLayer = adbExecCommand(deviceID, "shell find " + location + " -name " + layerName).strStdout;
+  if(!foundLayer.empty())
   {
     RDCLOG("Found RenderDoc layer in %s", location.c_str());
     return true;
@@ -406,25 +413,100 @@ bool CheckPatchingRequirements()
   return true;
 }
 
-bool PullAPK(const string &deviceID, const string &pkgPath, const string &apk)
+bool PullFile(const string &deviceID, const string &remotePath, const string &hostPath)
 {
-  RDCLOG("Pulling APK to patch");
+  adbExecCommand(deviceID, "pull " + remotePath + " " + hostPath);
 
-  adbExecCommand(deviceID, "pull " + pkgPath + " " + apk);
-
-  // Wait until the apk lands
+  // Wait until the file lands
   uint32_t elapsed = 0;
   uint32_t timeout = 10000;    // 10 seconds
-  while(elapsed < timeout)
+  while (elapsed < timeout)
   {
-    if(FileIO::exists(apk.c_str()))
+    if (FileIO::exists(hostPath.c_str()))
     {
-      RDCLOG("Original APK ready to go, continuing...");
       return true;
     }
 
     Threading::Sleep(1000);
     elapsed += 1000;
+  }
+
+  return false;
+}
+
+bool CheckLayerVersion(const string &deviceID, const string &layerName, const string &remoteLayer)
+{
+  RDCDEBUG("Checking layer version of: %s", layerName.c_str());
+
+  bool match = false;
+
+  string tmpDir = FileIO::GetTempFolderFilename();
+  string localLayer(tmpDir + layerName);
+
+  // Track how long it takes to pull the layer from device
+  std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+
+  if (PullFile(deviceID, trim(remoteLayer), trim(localLayer)))
+  {
+    std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+    uint64_t pullTime = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    RDCLOG("Pulled layer successfully, taking %lluus, continuing...", pullTime);
+
+    // Now inspect the layer...
+    FILE *f = NULL;
+    fopen_s(&f, localLayer.c_str(), "rb");
+
+    // Track how long scanning the layer takes
+    start = std::chrono::steady_clock::now();
+
+    while (f && !FileIO::feof(f))
+    {
+      string line = FileIO::getline(f);
+
+      if (line == "")
+        continue;
+
+      // Search for the pattern in RENDERDOC_Version_Tag_String
+      const char* target = std::strstr(line.c_str(), "RenderDoc build version:");
+      if(target != NULL)
+      {
+        std::vector<string> vec;
+        split(string(target), vec, ' ');
+        string version = vec[3];
+        string hash = vec[7];
+
+        if(version == FULL_VERSION_STRING && hash == GIT_COMMIT_HASH)
+        {
+          RDCLOG("RenderDoc layer version (%s) and git hash (%s) match.", version.c_str(), hash.c_str());
+          match = true;
+        }
+        else
+        {
+          RDCLOG("RenderDoc layer version (%s) and git hash (%s) do NOT match the host version (%s) or git hash (%s).", version.c_str(), hash.c_str(), FULL_VERSION_STRING, GIT_COMMIT_HASH);
+        }
+      }
+    }
+
+    end = std::chrono::steady_clock::now();
+    RDCLOG("Searching the layer took %lluus", std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
+    if (f)
+      FileIO::fclose(f);
+
+    return match;
+  }
+
+  RDCERR("Failed to pull layer");
+  return false;
+}
+
+bool PullAPK(const string &deviceID, const string &pkgPath, const string &apk)
+{
+  RDCLOG("Pulling APK to patch");
+
+  if(PullFile(deviceID, pkgPath, apk))
+  {
+    RDCLOG("Original APK ready to go, continuing...");
+    return true;
   }
 
   RDCERR("Failed to pull APK");
@@ -913,11 +995,21 @@ extern "C" RENDERDOC_API void RENDERDOC_CC RENDERDOC_CheckAndroidPackage(const c
   bool found = false;
 
   // First, see if the application contains the layer
-  if(SearchForAndroidLayer(deviceID, pkgPath, layerName))
+  string layerPath = "";
+  if(SearchForAndroidLayer(deviceID, pkgPath, layerName, layerPath))
+  {
     found = true;
 
+    // Check the version of the layer found
+    if(!CheckLayerVersion(deviceID, layerName, layerPath))
+    {
+      RDCWARN("RenderDoc layer found, but version does not match");
+      *flags |= AndroidFlags::WrongLayerVersion;
+    }
+  }
+
   // Next, check a debug location only usable by rooted devices
-  if(!found && SearchForAndroidLayer(deviceID, "/data/local/debug/vulkan", layerName))
+  if(!found && SearchForAndroidLayer(deviceID, "/data/local/debug/vulkan", layerName, layerPath))
     found = true;
 
   // TODO: Add any future layer locations
@@ -970,7 +1062,8 @@ extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_PushLayerToInstalledAndroid
   result = adbExecCommand(deviceID, "push " + layerPath + " " + layerDst);
 
   // Ensure the push succeeded
-  return SearchForAndroidLayer(deviceID, layerDst, layerName);
+  string foundLayer;
+  return SearchForAndroidLayer(deviceID, layerDst, layerName, foundLayer);
 }
 
 extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_AddLayerToAndroidPackage(const char *host,

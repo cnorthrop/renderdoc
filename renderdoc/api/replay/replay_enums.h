@@ -3325,6 +3325,10 @@ DOCUMENT(R"(A set of flags giving details of the current status of Android traca
 
   The application is not debuggable.
 
+.. data:: WrongLayerVersion
+
+   The found RenderDoc layer does not match the server's version.
+
 .. data:: RootAccess
 
    The device being targeted has root access.
@@ -3339,8 +3343,9 @@ enum class AndroidFlags : uint32_t
   MissingLibrary = 0x1,
   MissingPermissions = 0x2,
   NotDebuggable = 0x4,
-  RootAccess = 0x8,
-  Unfixable = 0x10,
+  WrongLayerVersion = 0x8,
+  RootAccess = 0x10,
+  Unfixable = 0x20,
 };
 
 BITMASK_OPERATORS(AndroidFlags);
