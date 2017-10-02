@@ -25,6 +25,9 @@
 #include "android.h"
 #include <sstream>
 #include <chrono>
+#include <algorithm>
+#include <vector>
+#include <ctype.h>
 #include "api/replay/version.h"
 #include "core/core.h"
 #include "serialise/string_utils.h"
@@ -445,10 +448,11 @@ bool CheckLayerVersion(const string &deviceID, const string &layerName, const st
 
   // Track how long it takes to pull the layer from device
   std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+  std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
 
   if (PullFile(deviceID, trim(remoteLayer), trim(localLayer)))
   {
-    std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+    end = std::chrono::steady_clock::now();
     uint64_t pullTime = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
     RDCLOG("Pulled layer successfully, taking %lluus, continuing...", pullTime);
 
@@ -459,8 +463,93 @@ bool CheckLayerVersion(const string &deviceID, const string &layerName, const st
     // Track how long scanning the layer takes
     start = std::chrono::steady_clock::now();
 
+// This section is for finding most common ascii characters in the file
+#if 0
+    // build a histogram of characters in the file
+    const int charCount = int(0x7e - 0x1f);
+    int histogram[charCount] = {};
+
     while (f && !FileIO::feof(f))
     {
+      int next = int(fgetc(f));
+
+      if (isprint(next) != 0)
+        histogram[next]++;
+    }
+
+    //Top 10 ascii characters in the library
+    //Histogram entry 0 : 796514 = 40 = 0x30 = "0"
+    //Histogram entry 1 : 357258 = 32 = 0x20 = " "
+    //Histogram entry 2 : 336251 = 83 = 0x53 = "S"
+    //Histogram entry 3 : 318459 = 69 = 0x45 = "E"
+    //Histogram entry 4 : 284960 = 75 = 0x4B = "K"
+    //Histogram entry 5 : 227995 = 49 = 0x31 = "1"
+    //Histogram entry 6 : 201353 = 73 = 0x49 = "I"
+    //Histogram entry 7 : 146266 = 67 = 0x43 = "C"
+    //Histogram entry 8 : 121887 = 80 = 0x50 = "P"
+    //Histogram entry 9 : 121841 = 78 = 0x4E = "N"
+
+
+    // print the contents
+    for (int i = 0; i < charCount; i++)
+      RDCLOG("Histogram entry %i: %i", i, histogram[i]);// , std::to_string(i));
+#endif
+
+
+// As a test, let's just search for "R" which we've already got before rebuilding the lib
+// tag[0] = "R"
+// tag[23] = ":"
+
+    // check for beginning character
+    // If not found, pull the next character
+    // If found, see if last character is in place
+    //   If so, scan the whole string, then pull out the bits we need
+    //   If not, fast forward to just after last character
+    while (f && !FileIO::feof(f))
+    {
+      int next = fgetc(f);
+      if (next == 'R')
+      {
+        //bring this in as optimization
+        fpos_t pos;
+        fgetpos(f, &pos);
+        fseek(f, 22, SEEK_CUR);
+        int last = fgetc(f);
+        if (last == ':')
+        {
+          // Go back to the beginning of our tag
+          fsetpos(f, &pos);
+
+          // Put the first character back (this is temporary, figure out the int->string below
+          ungetc(next, f);
+
+          //string line = "R" + FileIO::getline(f);
+          string line = FileIO::getline(f);
+          const char* target = std::strstr(line.c_str(), "RenderDoc build version:");
+          if (target != NULL)
+          {
+            std::vector<string> vec;
+            split(string(target), vec, ' ');
+            string version = vec[3];
+            string hash = vec[7];
+
+            if (version == FULL_VERSION_STRING && hash == GIT_COMMIT_HASH)
+            {
+              RDCLOG("RenderDoc layer version (%s) and git hash (%s) match.", version.c_str(), hash.c_str());
+              match = true;
+            }
+            else
+            {
+              RDCLOG("RenderDoc layer version (%s) and git hash (%s) do NOT match the host version (%s) or git hash (%s).", version.c_str(), hash.c_str(), FULL_VERSION_STRING, GIT_COMMIT_HASH);
+            }
+          }
+        }
+      }
+    }
+
+// Below is a simplistic solution
+#if 0
+      
       string line = FileIO::getline(f);
 
       if (line == "")
@@ -485,7 +574,7 @@ bool CheckLayerVersion(const string &deviceID, const string &layerName, const st
           RDCLOG("RenderDoc layer version (%s) and git hash (%s) do NOT match the host version (%s) or git hash (%s).", version.c_str(), hash.c_str(), FULL_VERSION_STRING, GIT_COMMIT_HASH);
         }
       }
-    }
+#endif
 
     end = std::chrono::steady_clock::now();
     RDCLOG("Searching the layer took %lluus", std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
