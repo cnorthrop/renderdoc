@@ -37,6 +37,7 @@
 
 extern "C" RENDERDOC_API const char RENDERDOC_Version_Tag_String[] =
     "                                                                                                   @"
+    "                                                                                                   @"
     "RenderDoc build version: " FULL_VERSION_STRING " from git commit " GIT_COMMIT_HASH;
 
 #endif
@@ -521,7 +522,8 @@ bool CheckLayerVersion(const string &deviceID, const string &layerName, const st
         fpos_t pos;
         fgetpos(f, &pos);
         //fseek(f, 22, SEEK_CUR);
-        fseek(f, 98, SEEK_CUR);
+        //fseek(f, 98, SEEK_CUR);
+        fseek(f, 198, SEEK_CUR);
         int last = fgetc(f);
         //if (last == ':')
         if (last == '@')
