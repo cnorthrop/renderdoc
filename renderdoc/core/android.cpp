@@ -27,6 +27,7 @@
 #include <chrono>
 #include <algorithm>
 #include <vector>
+#include <string>
 #include <ctype.h>
 #include "api/replay/version.h"
 #include "core/core.h"
@@ -35,6 +36,7 @@
 #if ENABLED(RDOC_ANDROID)
 
 extern "C" RENDERDOC_API const char RENDERDOC_Version_Tag_String[] =
+    "                                                                                                   @"
     "RenderDoc build version: " FULL_VERSION_STRING " from git commit " GIT_COMMIT_HASH;
 
 #endif
@@ -458,7 +460,11 @@ bool CheckLayerVersion(const string &deviceID, const string &layerName, const st
 
     // Now inspect the layer...
     FILE *f = NULL;
+#if ENABLED(RDOC_WIN32)
     fopen_s(&f, localLayer.c_str(), "rb");
+#else
+    f = fopen(localLayer.c_str(), "rb");
+#endif
 
     // Track how long scanning the layer takes
     start = std::chrono::steady_clock::now();
@@ -508,28 +514,34 @@ bool CheckLayerVersion(const string &deviceID, const string &layerName, const st
     while (f && !FileIO::feof(f))
     {
       int next = fgetc(f);
-      if (next == 'R')
+      //if (next == 'R')
+      if (next == ' ')
       {
         //bring this in as optimization
         fpos_t pos;
         fgetpos(f, &pos);
-        fseek(f, 22, SEEK_CUR);
+        //fseek(f, 22, SEEK_CUR);
+        fseek(f, 98, SEEK_CUR);
         int last = fgetc(f);
-        if (last == ':')
+        //if (last == ':')
+        if (last == '@')
         {
           // Go back to the beginning of our tag
-          fsetpos(f, &pos);
+          //fsetpos(f, &pos);
 
           // Put the first character back (this is temporary, figure out the int->string below
-          ungetc(next, f);
+          //ungetc(next, f);
 
           //string line = "R" + FileIO::getline(f);
           string line = FileIO::getline(f);
-          const char* target = std::strstr(line.c_str(), "RenderDoc build version:");
-          if (target != NULL)
+          //const char* target = std::strstr(line.c_str(), "RenderDoc build version:");
+          //if (target != NULL)
+          if(line.find("RenderDoc build version:") != string::npos)
           {
             std::vector<string> vec;
-            split(string(target), vec, ' ');
+            //split(string(target), vec, ' ');
+
+            split(line, vec, ' ');
             string version = vec[3];
             string hash = vec[7];
 
