@@ -36,8 +36,9 @@
 #if ENABLED(RDOC_ANDROID)
 
 extern "C" RENDERDOC_API const char RENDERDOC_Version_Tag_String[] =
-    "                                                                                                   @"
-    "                                                                                                   @"
+    // Begin the tag with a pattern to let us easily fast forward.
+    // Spaces are very common in the exe, tildas are not.
+    " ==================================================================================================~"
     "RenderDoc build version: " FULL_VERSION_STRING " from git commit " GIT_COMMIT_HASH;
 
 #endif
@@ -467,6 +468,9 @@ bool CheckLayerVersion(const string &deviceID, const string &layerName, const st
     f = fopen(localLayer.c_str(), "rb");
 #endif
 
+    char buffer[1024];
+    setbuf(f, buffer);
+
     // Track how long scanning the layer takes
     start = std::chrono::steady_clock::now();
 
@@ -506,6 +510,7 @@ bool CheckLayerVersion(const string &deviceID, const string &layerName, const st
 // As a test, let's just search for "R" which we've already got before rebuilding the lib
 // tag[0] = "R"
 // tag[23] = ":"
+//	RDCLOG("marker length: %i", string(VERSION_TAG_MARKER).length() - 2);
 
     // check for beginning character
     // If not found, pull the next character
@@ -516,30 +521,57 @@ bool CheckLayerVersion(const string &deviceID, const string &layerName, const st
     {
       int next = fgetc(f);
       //if (next == 'R')
+      // Search for most common character in the file 
       if (next == ' ')
       {
         //bring this in as optimization
-        fpos_t pos;
-        fgetpos(f, &pos);
+        //fpos_t pos;
+        //fgetpos(f, &pos);
         //fseek(f, 22, SEEK_CUR);
-        //fseek(f, 98, SEEK_CUR);
-        fseek(f, 198, SEEK_CUR);
+        fseek(f, 98, SEEK_CUR);
+        //fseek(f, 112, SEEK_CUR);
+
+        //fseek(f, 118, SEEK_CUR);
+	//Subtract 2 to account for initial hit and checking of last character
+        //fseek(f, string(VERSION_TAG_MARKER).length() - 2, SEEK_CUR);
+        //fseek(f, 150, SEEK_CUR);
+        //fseek(f, 198, SEEK_CUR);
         int last = fgetc(f);
+	//int last2 = fgetc(f);
+	//int last3 = fgetc(f);
+
+        // And pair it with the least common character
         //if (last == ':')
-        if (last == '@')
+       // if (last == '@')
+        if (last == '~')
         {
+	  int beginTag = fgetc(f);
+          if(beginTag != 'R')
+	  {
+	    string foundNext;
+	    foundNext = beginTag;
+            RDCLOG("Tag found, but build version does not follow, found %s after '~'", foundNext.c_str());
+	    continue;
+	  }
           // Go back to the beginning of our tag
           //fsetpos(f, &pos);
 
           // Put the first character back (this is temporary, figure out the int->string below
           //ungetc(next, f);
 
-          //string line = "R" + FileIO::getline(f);
-          string line = FileIO::getline(f);
+          string line;
+	  line = beginTag;
+	  line += FileIO::getline(f);
+          //string line = FileIO::getline(f);
+
+	  // Read in the tagline
+	  //for(int i; i < 
+
           //const char* target = std::strstr(line.c_str(), "RenderDoc build version:");
           //if (target != NULL)
           if(line.find("RenderDoc build version:") != string::npos)
           {
+            RDCLOG("Tag found, MATCHED, line searched: %s", line.c_str());
             std::vector<string> vec;
             //split(string(target), vec, ' ');
 
@@ -551,12 +583,18 @@ bool CheckLayerVersion(const string &deviceID, const string &layerName, const st
             {
               RDCLOG("RenderDoc layer version (%s) and git hash (%s) match.", version.c_str(), hash.c_str());
               match = true;
+	      break;
             }
             else
             {
               RDCLOG("RenderDoc layer version (%s) and git hash (%s) do NOT match the host version (%s) or git hash (%s).", version.c_str(), hash.c_str(), FULL_VERSION_STRING, GIT_COMMIT_HASH);
+	      break;
             }
           }
+	  else
+	  {
+              RDCLOG("Tag found, no match, line searched: %s", line.c_str());
+	  }
         }
       }
     }
