@@ -473,181 +473,67 @@ bool CheckLayerVersion(const string &deviceID, const string &layerName, const st
     f = fopen(localLayer.c_str(), "rb");
 #endif
 
-    char buffer[1024];
-    //setbuf(f, buffer);
-    setvbuf(f, buffer, _IOFBF, 1024);
-
     // Track how long scanning the layer takes
     start = std::chrono::steady_clock::now();
 
-// This section is for finding most common ascii characters in the file
-#if 0
-    // build a histogram of characters in the file
-    const int charCount = int(0x7e - 0x1f);
-    int histogram[charCount] = {};
-
     while (f && !FileIO::feof(f))
     {
-      int next = int(fgetc(f));
-
-      if (isprint(next) != 0)
-        histogram[next]++;
-    }
-
-    //Top 10 ascii characters in the library
-    //Histogram entry 0 : 796514 = 40 = 0x30 = "0"
-    //Histogram entry 1 : 357258 = 32 = 0x20 = " "
-    //Histogram entry 2 : 336251 = 83 = 0x53 = "S"
-    //Histogram entry 3 : 318459 = 69 = 0x45 = "E"
-    //Histogram entry 4 : 284960 = 75 = 0x4B = "K"
-    //Histogram entry 5 : 227995 = 49 = 0x31 = "1"
-    //Histogram entry 6 : 201353 = 73 = 0x49 = "I"
-    //Histogram entry 7 : 146266 = 67 = 0x43 = "C"
-    //Histogram entry 8 : 121887 = 80 = 0x50 = "P"
-    //Histogram entry 9 : 121841 = 78 = 0x4E = "N"
-
-
-    // print the contents
-    for (int i = 0; i < charCount; i++)
-      RDCLOG("Histogram entry %i: %i", i, histogram[i]);// , std::to_string(i));
-#endif
-
-// This was an attempt to skip large chunks of data
-#if 0
-// As a test, let's just search for "R" which we've already got before rebuilding the lib
-// tag[0] = "R"
-// tag[23] = ":"
-//	RDCLOG("marker length: %i", string(VERSION_TAG_MARKER).length() - 2);
-
-    // check for beginning character
-    // If not found, pull the next character
-    // If found, see if last character is in place
-    //   If so, scan the whole string, then pull out the bits we need
-    //   If not, fast forward to just after last character
-    while (f && !FileIO::feof(f))
-    {
+#if 1
       int next = fgetc(f);
       if (next == 'R')
-      // Search for most common character in the file 
-      if (next == ' ')
       {
-        //bring this in as optimization
-        //fpos_t pos;
-        //fgetpos(f, &pos);
-        //fseek(f, 22, SEEK_CUR);
-        //fseek(f, 98, SEEK_CUR);
-        //fseek(f, 48, SEEK_CUR);
-        //fseek(f, 112, SEEK_CUR);
+        string line;
+	line += FileIO::getline(f);
 
-        //fseek(f, 118, SEEK_CUR);
-	//Subtract 2 to account for initial hit and checking of last character
-        //fseek(f, string(VERSION_TAG_MARKER).length() - 2, SEEK_CUR);
-        //fseek(f, 150, SEEK_CUR);
+        if (line == "")
+          continue;
 
+	// This can't be our tag if too short
+	if(line.length() < 85)
+          continue;
 
-          // rather than seek, let's gather all the characters after each
-          string runupchars;
-          int last = 0;
-          //for (int i = 0; i < 99; i++)
-          //for (int i = 0; i < 104; i++)
-          for (int i = 0; i < 105; i++)
-          //for (int i = 0; i < 106; i++)
-          //for (int i = 0; i < 109; i++)
-          //for (int i = 0; i < 119; i++)
-          {
-            last = fgetc(f);
-            string lastStr;
-            lastStr = char(last);            
-            runupchars += NumberToString(i) + "=" + lastStr + ", ";
-          }
-          RDCLOG("runupchars: %s", runupchars.c_str());
-
-
-
-
-
-        //fseek(f, 198, SEEK_CUR);
-
-          //int last = fgetc(f);
-	//int last2 = fgetc(f);
-	//int last3 = fgetc(f);
-
-        // And pair it with the least common character
-        //if (last == ':')
-       // if (last == '@')
-        if (last == '~')
+	// Saerch for the remainder of our tag pattern
+        if(line.find("enderDoc build version:") != string::npos)
         {
-          
-          //RDCLOG("runupchars: %s", runupchars.c_str());
-          //int beginTag = fgetc(f);
-   //       if(beginTag != 'R')
-	  //{
-	  //  string foundNext;
-	  //  foundNext = beginTag;
-   //         RDCLOG("Tag found, but build version does not follow, found %s after '~'", foundNext.c_str());
-	  //  continue;
-	  //}
-          // Go back to the beginning of our tag
-          //fsetpos(f, &pos);
+          std::vector<string> vec;
 
-          // Put the first character back (this is temporary, figure out the int->string below
-          //ungetc(next, f);
+          split(line, vec, ' ');
+          string version = vec[3];
+          string hash = vec[7];
 
-          string line;
-	  //line = beginTag;
-	  line += FileIO::getline(f);
-          //string line = FileIO::getline(f);
-
-	  // Read in the tagline
-	  //for(int i; i < 
-
-          //const char* target = std::strstr(line.c_str(), "RenderDoc build version:");
-          //if (target != NULL)
-          if(line.find("RenderDoc build version:") != string::npos)
+          if (version == FULL_VERSION_STRING && hash == GIT_COMMIT_HASH)
           {
-            RDCLOG("Tag found, MATCHED, line searched: %s", line.c_str());
-            std::vector<string> vec;
-            //split(string(target), vec, ' ');
-
-            split(line, vec, ' ');
-            string version = vec[3];
-            string hash = vec[7];
-
-            if (version == FULL_VERSION_STRING && hash == GIT_COMMIT_HASH)
-            {
-              RDCLOG("RenderDoc layer version (%s) and git hash (%s) match.", version.c_str(), hash.c_str());
-              match = true;
-	      break;
-            }
-            else
-            {
-              RDCLOG("RenderDoc layer version (%s) and git hash (%s) do NOT match the host version (%s) or git hash (%s).", version.c_str(), hash.c_str(), FULL_VERSION_STRING, GIT_COMMIT_HASH);
-	      break;
-            }
+            RDCLOG("RenderDoc layer version (%s) and git hash (%s) match.", version.c_str(), hash.c_str());
+            match = true;
+	    break;
           }
-	  else
-	  {
-              RDCLOG("Tag found, no match, line searched: %s", line.c_str());
-	  }
+          else
+          {
+            RDCLOG("RenderDoc layer version (%s) and git hash (%s) do NOT match the host version (%s) or git hash (%s).", version.c_str(), hash.c_str(), FULL_VERSION_STRING, GIT_COMMIT_HASH);
+	    break;
+          }
         }
       }
     }
 #endif
 
 // Below is a simplistic solution
-#if 1 
+#if 0
       
       string line = FileIO::getline(f);
 
       if (line == "")
         continue;
 
+      // This can't be our tag if too short
+      if(line.length() < 85)
+        continue;
+
       // Search for the pattern in RENDERDOC_Version_Tag_String
-      const char* target = std::strstr(line.c_str(), "RenderDoc build version:");
-      if(target != NULL)
+      if(line.find("RenderDoc build version:") != string::npos)
       {
         std::vector<string> vec;
-        split(string(target), vec, ' ');
+	split(line, vec, ' ');
         string version = vec[3];
         string hash = vec[7];
 
@@ -661,6 +547,7 @@ bool CheckLayerVersion(const string &deviceID, const string &layerName, const st
           RDCLOG("RenderDoc layer version (%s) and git hash (%s) do NOT match the host version (%s) or git hash (%s).", version.c_str(), hash.c_str(), FULL_VERSION_STRING, GIT_COMMIT_HASH);
         }
       }
+  }
 #endif
 
     end = std::chrono::steady_clock::now();
