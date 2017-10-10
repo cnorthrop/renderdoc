@@ -36,9 +36,6 @@
 #if ENABLED(RDOC_ANDROID)
 
 extern "C" RENDERDOC_API const char RENDERDOC_Version_Tag_String[] =
-    // Begin the tag with a pattern to let us easily fast forward.
-    // Spaces are very common in the exe, tildas are not.
-    " ==================================================================================================~"
     "RenderDoc build version: " FULL_VERSION_STRING " from git commit " GIT_COMMIT_HASH;
 
 #endif
@@ -515,7 +512,8 @@ bool CheckLayerVersion(const string &deviceID, const string &layerName, const st
       RDCLOG("Histogram entry %i: %i", i, histogram[i]);// , std::to_string(i));
 #endif
 
-
+// This was an attempt to skip large chunks of data
+#if 0
 // As a test, let's just search for "R" which we've already got before rebuilding the lib
 // tag[0] = "R"
 // tag[23] = ":"
@@ -529,7 +527,7 @@ bool CheckLayerVersion(const string &deviceID, const string &layerName, const st
     while (f && !FileIO::feof(f))
     {
       int next = fgetc(f);
-      //if (next == 'R')
+      if (next == 'R')
       // Search for most common character in the file 
       if (next == ' ')
       {
@@ -550,7 +548,12 @@ bool CheckLayerVersion(const string &deviceID, const string &layerName, const st
           // rather than seek, let's gather all the characters after each
           string runupchars;
           int last = 0;
-          for (int i = 0; i < 99; i++)
+          //for (int i = 0; i < 99; i++)
+          //for (int i = 0; i < 104; i++)
+          for (int i = 0; i < 105; i++)
+          //for (int i = 0; i < 106; i++)
+          //for (int i = 0; i < 109; i++)
+          //for (int i = 0; i < 119; i++)
           {
             last = fgetc(f);
             string lastStr;
@@ -629,9 +632,10 @@ bool CheckLayerVersion(const string &deviceID, const string &layerName, const st
         }
       }
     }
+#endif
 
 // Below is a simplistic solution
-#if 0
+#if 1 
       
       string line = FileIO::getline(f);
 
