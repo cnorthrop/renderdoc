@@ -441,6 +441,14 @@ bool PullFile(const string &deviceID, const string &remotePath, const string &ho
   return false;
 }
 
+template <typename T>
+std::string NumberToString(T Number)
+{
+  std::ostringstream ss;
+  ss << Number;
+  return ss.str();
+}
+
 bool CheckLayerVersion(const string &deviceID, const string &layerName, const string &remoteLayer)
 {
   RDCDEBUG("Checking layer version of: %s", layerName.c_str());
@@ -469,7 +477,8 @@ bool CheckLayerVersion(const string &deviceID, const string &layerName, const st
 #endif
 
     char buffer[1024];
-    setbuf(f, buffer);
+    //setbuf(f, buffer);
+    setvbuf(f, buffer, _IOFBF, 1024);
 
     // Track how long scanning the layer takes
     start = std::chrono::steady_clock::now();
@@ -528,15 +537,35 @@ bool CheckLayerVersion(const string &deviceID, const string &layerName, const st
         //fpos_t pos;
         //fgetpos(f, &pos);
         //fseek(f, 22, SEEK_CUR);
-        fseek(f, 98, SEEK_CUR);
+        //fseek(f, 98, SEEK_CUR);
+        //fseek(f, 48, SEEK_CUR);
         //fseek(f, 112, SEEK_CUR);
 
         //fseek(f, 118, SEEK_CUR);
 	//Subtract 2 to account for initial hit and checking of last character
         //fseek(f, string(VERSION_TAG_MARKER).length() - 2, SEEK_CUR);
         //fseek(f, 150, SEEK_CUR);
+
+
+          // rather than seek, let's gather all the characters after each
+          string runupchars;
+          int last = 0;
+          for (int i = 0; i < 99; i++)
+          {
+            last = fgetc(f);
+            string lastStr;
+            lastStr = char(last);            
+            runupchars += NumberToString(i) + "=" + lastStr + ", ";
+          }
+          RDCLOG("runupchars: %s", runupchars.c_str());
+
+
+
+
+
         //fseek(f, 198, SEEK_CUR);
-        int last = fgetc(f);
+
+          //int last = fgetc(f);
 	//int last2 = fgetc(f);
 	//int last3 = fgetc(f);
 
@@ -545,14 +574,16 @@ bool CheckLayerVersion(const string &deviceID, const string &layerName, const st
        // if (last == '@')
         if (last == '~')
         {
-	  int beginTag = fgetc(f);
-          if(beginTag != 'R')
-	  {
-	    string foundNext;
-	    foundNext = beginTag;
-            RDCLOG("Tag found, but build version does not follow, found %s after '~'", foundNext.c_str());
-	    continue;
-	  }
+          
+          //RDCLOG("runupchars: %s", runupchars.c_str());
+          //int beginTag = fgetc(f);
+   //       if(beginTag != 'R')
+	  //{
+	  //  string foundNext;
+	  //  foundNext = beginTag;
+   //         RDCLOG("Tag found, but build version does not follow, found %s after '~'", foundNext.c_str());
+	  //  continue;
+	  //}
           // Go back to the beginning of our tag
           //fsetpos(f, &pos);
 
@@ -560,7 +591,7 @@ bool CheckLayerVersion(const string &deviceID, const string &layerName, const st
           //ungetc(next, f);
 
           string line;
-	  line = beginTag;
+	  //line = beginTag;
 	  line += FileIO::getline(f);
           //string line = FileIO::getline(f);
 
