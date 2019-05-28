@@ -176,6 +176,32 @@ int GetCurrentPID(const std::string &deviceID, const std::string &packageName)
   return 0;
 }
 
+bool CheckLayerSupport(const std::string &deviceID)
+{
+  std::string androidVersion = trim(
+      adbExecCommand(deviceID, "shell getprop ro.build.version.release").strStdout);
+
+  if (androidVersion.empty())
+  {
+    RDCLOG("Unable to detect Android version");
+    return false;
+  }
+
+  // Debug layer support was added for GLES and Vulkan in Android-Q (ver 10)
+  RDCLOG("Detected Android version %s", androidVersion.c_str());
+  if (std::isalpha(androidVersion.c_str()[0]))
+  {
+    RDCLOG("Comparing Android version %i against 'Q'", androidVersion.c_str());
+    return androidVersion.c_str()[0] >= 'Q';
+  }
+
+  RDCLOG("Android version is an integer: %s", androidVersion.c_str());
+  int version = std::stol(androidVersion.c_str(), NULL, 10);
+
+  RDCLOG("Comparing Android version %i against '10'", version);
+  return version >= 10;
+}
+
 ExecuteResult StartAndroidPackageForCapture(const char *host, const char *package,
                                             const char *intentArgs, const CaptureOptions &opts)
 {
@@ -198,8 +224,23 @@ ExecuteResult StartAndroidPackageForCapture(const char *host, const char *packag
   adbExecCommand(deviceID, StringFormat::Fmt("forward --remove tcp:%i", jdwpPort));
   // force stop the package if it was running before
   adbExecCommand(deviceID, "shell am force-stop " + packageName);
-  // enable the vulkan layer (will only be used by vulkan programs)
-  adbExecCommand(deviceID, "shell setprop debug.vulkan.layers " RENDERDOC_VULKAN_LAYER_NAME);
+
+  bool supportsLayers = CheckLayerSupport(deviceID);
+  if(supportsLayers)
+  {
+    std::string installedABI = Android::DetermineInstalledABI(deviceID, packageName);
+    std::string layerPackage = GetRenderDocPackageForABI(GetABI(installedABI));
+    adbExecCommand(deviceID, "shell settings put global enable_gpu_debug_layers 1");
+    adbExecCommand(deviceID, "shell settings put global gpu_debug_app " + packageName);
+    adbExecCommand(deviceID, "shell settings put global gpu_debug_layer_app " + layerPackage);
+    adbExecCommand(deviceID, "shell settings put global gpu_debug_layers_gles " RENDERDOC_ANDROID_LIBRARY);
+  }
+  else
+  {
+    // enable the vulkan layer (will be used by all vulkan programs)
+    adbExecCommand(deviceID, "shell setprop debug.vulkan.layers " RENDERDOC_VULKAN_LAYER_NAME);
+  }
+
   // if in VR mode, enable frame delimiter markers
   adbExecCommand(deviceID, "shell setprop debug.vr.profiler 1");
   // create the data directory we will use for storing, in case the application doesn't
@@ -225,6 +266,10 @@ ExecuteResult StartAndroidPackageForCapture(const char *host, const char *packag
     RDCLib.clear();
 
   bool injectLibraries = true;
+  if(supportsLayers)
+  {
+    injectLibraries = false;
+  }
 
   if(RDCLib.empty())
   {

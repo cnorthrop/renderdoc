@@ -734,28 +734,59 @@ static void EGLHooked(void *handle)
   });
 }
 
-#if ENABLED(RDOC_WIN32)
 bool ShouldHookEGL()
 {
+#if ENABLED(RDOC_WIN32)
+  // on windows allow an environment variable to disable EGL hooks
   const char *toggle = Process::GetEnvVariable("RENDERDOC_HOOK_EGL");
 
   // if the var is set to 0, then don't hook EGL
   if(toggle && toggle[0] == '0')
+  {
+    RDCLOG("EGL hooks disabled - if GLES emulator is in use, underlying API will be captured");
     return false;
+  }
+#endif
 
+#if ENABLED(RDOC_ANDROID)
+  void* egl_handle = dlopen("libEGL.so", RTLD_LAZY);
+  void* query_string = dlsym(egl_handle, "eglQueryString");
+  if (!query_string)
+  {
+    RDCLOG("Unable to find eglQueryString entry point, enabling EGL hooking");
+    return true;
+  }
+  else
+  {
+    RDCLOG("Found eglQueryString entry point in ShouldHookEGL");
+  }
+
+  typedef const char* (EGLAPIENTRY * PFNEGLQUERYSTRINGPROC)(EGLDisplay,EGLint);
+  PFNEGLQUERYSTRINGPROC eglQueryStringFunc = (PFNEGLQUERYSTRINGPROC)query_string;
+  const char* query_extension = eglQueryStringFunc(EGL_NO_DISPLAY, EGL_EXTENSIONS);
+  if (query_extension != NULL)
+  {
+    std::string display_extension(query_extension);
+    if(display_extension.find("EGL_ANDROID_GLES_layers") != std::string::npos)
+    {
+      RDCLOG("Disabling EGL hooks - GLES layering in effect");
+      return false;
+    }
+    else
+    {
+      RDCLOG("Did not find EGL_ANDROID_GLES_layers in libEGL");
+    }
+  }
+#endif
+
+  RDCLOG("Returning true for ShouldHookEGL");
   return true;
 }
-#endif
 
 void EGLHook::RegisterHooks()
 {
-#if ENABLED(RDOC_WIN32)
   if(!ShouldHookEGL())
-  {
-    RDCLOG("EGL hooks disabled - if GLES emulator is in use, underlying API will be captured");
     return;
-  }
-#endif
 
   RDCLOG("Registering EGL hooks");
 
@@ -794,3 +825,72 @@ void EGLHook::RegisterHooks()
   EGL_HOOKED_SYMBOLS(EGL_REGISTER)
 #undef EGL_REGISTER
 }
+
+// Android GLES layering support
+#if ENABLED(RDOC_ANDROID)
+typedef __eglMustCastToProperFunctionPointerType EGLFuncPointer;
+typedef __eglMustCastToProperFunctionPointerType(EGLAPIENTRY *PFNEGLGETNEXTLAYERPROCADDRESSPROC)(
+    void *, const char *funcName);
+
+extern "C" {
+__attribute((visibility("default"))) EGLAPI void AndroidGLESLayer_Initialize(
+    void *layer_id, PFNEGLGETNEXTLAYERPROCADDRESSPROC next_gpa)
+{
+  RDCLOG("Initialising Android GLES layer with ID %p", layer_id);
+
+  // as a hook callback this is only called while capturing
+  RDCASSERT(!RenderDoc::Inst().IsReplayApp());
+
+// populate EGL dispatch table with the next layer's function pointers. Fetch all 'hooked' and
+// non-hooked functions
+#define EGL_FETCH(func, isext)                                                 \
+  EGL.func = (CONCAT(PFN_egl, func))next_gpa(layer_id, "egl" STRINGIZE(func)); \
+  if(!EGL.func)                                                                \
+    RDCWARN("Couldn't fetch function pointer for egl" STRINGIZE(func));
+  EGL_HOOKED_SYMBOLS(EGL_FETCH)
+  EGL_NONHOOKED_SYMBOLS(EGL_FETCH)
+#undef EGL_FETCH
+
+  // populate GL dispatch table with the next layer's function pointers
+  GL.PopulateWithCallback(
+      [layer_id, next_gpa](const char *f) { return (void *)next_gpa(layer_id, f); });
+}
+
+__attribute((visibility("default"))) EGLAPI void *AndroidGLESLayer_GetProcAddress(const char *funcName,
+                                                                                  EGLFuncPointer next)
+{
+  RDCLOG("Loader has asked for %s with next %llu", funcName, (unsigned long long)next);
+
+  const char* func = funcName;
+
+  if(!strcmp(func, "eglBindAPI"))
+    return (void*)eglBindAPI_renderdoc_hooked;
+  if(!strcmp(func, "eglCreateWindowSurface"))
+    return (void*)eglCreateWindowSurface_renderdoc_hooked;
+
+  if(!strcmp(func, "eglCreateContext"))
+    return (void*)eglCreateContext_renderdoc_hooked;
+  if(!strcmp(func, "eglGetDisplay"))
+    return (void*)eglGetDisplay_renderdoc_hooked;
+  if(!strcmp(func, "eglDestroyContext"))
+    return (void*)eglDestroyContext_renderdoc_hooked;
+  if(!strcmp(func, "eglMakeCurrent"))
+    return (void*)eglMakeCurrent_renderdoc_hooked;
+  if(!strcmp(func, "eglSwapBuffers"))
+    return (void*)eglSwapBuffers_renderdoc_hooked;
+  if(!strcmp(func, "eglPostSubBufferNV"))
+    return (void*)eglPostSubBufferNV_renderdoc_hooked;
+  if(!strcmp(func, "eglGetProcAddress"))
+    return (void*)eglGetProcAddress_renderdoc_hooked;
+
+
+  RDCLOG("No hit checking with symbols by name for %s with next %llu", func, (unsigned long long)next);
+
+  // otherwise, consult our database of hooks
+  void *ret = HookedGetProcAddress(funcName, (void *)next);
+
+  // spec expects us to return next unmodified for functions we don't support
+  return ret;
+}
+} // extern C
+#endif

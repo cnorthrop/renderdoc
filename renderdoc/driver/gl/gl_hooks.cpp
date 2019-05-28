@@ -242,6 +242,12 @@ static void GLHooked(void *handle)
 
 void GLHook::RegisterHooks()
 {
+#if ENABLED(RDOC_ANDROID)
+  // on android if EGL hooking is disabled we're using GLES layering, don't register any GL hooks
+  if(!ShouldHookEGL())
+    return;
+#endif
+
   RDCLOG("Registering OpenGL hooks");
 
 // pick the 'primary' library we consider GL functions to come from. This is mostly important on
